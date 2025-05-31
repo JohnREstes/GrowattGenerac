@@ -21,30 +21,6 @@ const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
 
 let pinState = 'OFF';
 
-// Middleware
-console.log('[INIT] Registering middleware...');
-app.use(express.static(path.join(__dirname, 'public')));
-console.log(`[STATIC] Serving /public from: ${path.join(__dirname, 'public')}`);
-
-// HTTP Request Logger
-app.use((req, res, next) => {
-  console.log(`[REQ] ${req.method} ${req.url}`);
-  next();
-});
-
-// Serve static socket.io-client files with logging
-app.use('/espcontrol/socket.io', (req, res, next) => {
-  console.log(`[STATIC SOCKET.IO] ${req.method} ${req.url}`);
-  next();
-}, express.static(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist')));
-
-// Explicit socket.io.js route with logging
-app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
-  const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
-  console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
-  res.sendFile(filePath);
-});
-
 // Body + session middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
@@ -53,21 +29,43 @@ app.use(session({
   saveUninitialized: false,
 }));
 
-// Auth middleware
-function isAuthenticated(req, res, next) {
+// Auth protection middleware
+app.use('/espcontrol', (req, res, next) => {
+  if (req.path.startsWith('/socket.io')) return next(); // Allow socket path
   if (req.session.loggedIn) return next();
-  res.redirect('/login.html');
-}
+  console.log('[AUTH] Blocked unauthenticated access to:', req.originalUrl);
+  return res.redirect('/login.html');
+});
+
+// Serve static assets AFTER auth check
+console.log('[INIT] Registering static route...');
+app.use(express.static(path.join(__dirname, 'public')));
+console.log(`[STATIC] Serving /public from: ${path.join(__dirname, 'public')}`);
+
+// HTTP request logger
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.url}`);
+  next();
+});
+
+// Serve socket.io.js explicitly
+app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
+  const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
+  console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
+  res.sendFile(filePath);
+});
 
 // Routes
-app.get('/', isAuthenticated, (req, res) => {
-  console.log('[GET] / -> Serving index.html');
+app.get('/', (req, res) => {
+  res.redirect('/espcontrol/');
+});
+
+app.get('/espcontrol/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.get('/control', (req, res) => {
-  console.log('[GET] /control -> Returning pinState:', pinState);
-  res.send(pinState);
+app.get('/login.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
 app.post('/login', (req, res) => {
@@ -76,11 +74,23 @@ app.post('/login', (req, res) => {
   if (username === LOGIN_USERNAME && password === LOGIN_PASSWORD) {
     console.log('[LOGIN] Success');
     req.session.loggedIn = true;
-    res.redirect('/');
+    res.redirect('/espcontrol/');
   } else {
     console.log('[LOGIN] Failed');
     res.send('Invalid credentials. <a href="/login.html">Try again</a>.');
   }
+});
+
+// Optional: logout route
+app.get('/logout', (req, res) => {
+  req.session.destroy(() => {
+    res.redirect('/login.html');
+  });
+});
+
+app.get('/control', (req, res) => {
+  console.log('[GET] /control -> Returning pinState:', pinState);
+  res.send(pinState);
 });
 
 // WebSocket
