@@ -23,7 +23,7 @@ let pinState = 'OFF'; // This is the state the ESP fetches and browser can toggl
 
 // Middleware
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/espcontrol/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist')));
+app.use('/espcontrol/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist')));
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
   secret: SESSION_SECRET,
