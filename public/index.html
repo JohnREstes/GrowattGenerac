@@ -50,7 +50,7 @@
 
   <script src="/espcontrol/socket.io/socket.io.js"></script>
   <script>
-    const socket = io('/espcontrol', {
+    const socket = io({
       path: '/espcontrol/socket.io'
     });
 
@@ -63,6 +63,7 @@
       socket.emit('toggle');
     }
   </script>
+
 
 </body>
 </html>
