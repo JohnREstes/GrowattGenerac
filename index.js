@@ -26,11 +26,26 @@ console.log('[INIT] Registering middleware...');
 app.use(express.static(path.join(__dirname, 'public')));
 console.log(`[STATIC] Serving /public from: ${path.join(__dirname, 'public')}`);
 
+// HTTP Request Logger
+app.use((req, res, next) => {
+  console.log(`[REQ] ${req.method} ${req.url}`);
+  next();
+});
+
+// Serve static socket.io-client files with logging
 app.use('/espcontrol/socket.io', (req, res, next) => {
-  console.log(`[REQUEST] Socket.IO static file requested: ${req.url}`);
+  console.log(`[STATIC SOCKET.IO] ${req.method} ${req.url}`);
   next();
 }, express.static(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist')));
 
+// Explicit socket.io.js route with logging
+app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
+  const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
+  console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
+  res.sendFile(filePath);
+});
+
+// Body + session middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
   secret: SESSION_SECRET,
@@ -43,13 +58,6 @@ function isAuthenticated(req, res, next) {
   if (req.session.loggedIn) return next();
   res.redirect('/login.html');
 }
-
-// Explicit socket.io.js file route
-app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
-  const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
-  console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
-  res.sendFile(filePath);
-});
 
 // Routes
 app.get('/', isAuthenticated, (req, res) => {
@@ -77,7 +85,7 @@ app.post('/login', (req, res) => {
 
 // WebSocket
 io.on('connection', socket => {
-  console.log('[SOCKET.IO] New WebSocket client connected');
+  console.log(`[SOCKET.IO] New client connected: ${socket.id}`);
   socket.emit('state', pinState);
 
   socket.on('toggle', () => {
@@ -92,6 +100,14 @@ io.on('connection', socket => {
       console.log(`[SOCKET.IO] State explicitly set to: ${pinState}`);
       io.emit('state', pinState);
     }
+  });
+
+  socket.on('disconnect', reason => {
+    console.log(`[SOCKET.IO] Client disconnected: ${socket.id}, Reason: ${reason}`);
+  });
+
+  socket.on('error', err => {
+    console.error(`[SOCKET.IO] Error on socket ${socket.id}:`, err);
   });
 });
 
