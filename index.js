@@ -7,7 +7,10 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  path: '/espcontrol/socket.io'
+});
+
 
 const port = 3020;
 
