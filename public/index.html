@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>ESP8266 Control</title>
+  <title>ESP8266 Control Panel</title>
   <style>
     body {
       font-family: sans-serif;
@@ -46,24 +46,20 @@
   <label>
     <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
   </label>
-  <div id="status">Current State: OFF</div>
+  <div id="status">Loading...</div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script>
-    async function getState() {
-      const res = await fetch('/control');
-      const state = await res.text();
-      const toggle = document.getElementById('pinToggle');
-      toggle.checked = (state.trim() === 'ON');
+    const socket = io();
+
+    socket.on('state', state => {
+      document.getElementById('pinToggle').checked = (state === 'ON');
       document.getElementById('status').innerText = `Current State: ${state}`;
-    }
+    });
 
-    async function togglePin() {
-      const res = await fetch('/toggle');
-      const data = await res.text();
-      await getState(); // Refresh status
+    function togglePin() {
+      socket.emit('toggle');
     }
-
-    getState(); // Initial load
   </script>
 </body>
 </html>
