@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ESP8266 Control</title>
+</head>
+<body>
+  <h1>Toggle ESP8266 D0</h1>
+  <button onclick="togglePin()">Toggle</button>
+
+  <script>
+    function togglePin() {
+      fetch('/toggle').then(() => alert("Toggled!"));
+    }
+  </script>
+</body>
+</html>
