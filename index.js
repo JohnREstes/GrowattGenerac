@@ -39,7 +39,17 @@ app.use('/espcontrol', (req, res, next) => {
 
 // Serve static assets AFTER auth check
 console.log('[INIT] Registering static route...');
-app.use(express.static(path.join(__dirname, 'public')));
+app.use((req, res, next) => {
+  if (req.session.loggedIn) {
+    express.static(path.join(__dirname, 'public'))(req, res, next);
+  } else if (req.path === '/login.html' || req.path === '/login' || req.path.startsWith('/espcontrol/socket.io')) {
+    next(); // Allow login and socket
+  } else {
+    console.log('[AUTH] Redirecting unauthenticated access to login');
+    res.redirect('/login.html');
+  }
+});
+
 console.log(`[STATIC] Serving /public from: ${path.join(__dirname, 'public')}`);
 
 // HTTP request logger
