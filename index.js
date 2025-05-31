@@ -19,11 +19,18 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 const LOGIN_USERNAME = process.env.LOGIN_USERNAME;
 const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
 
-let pinState = 'OFF'; // This is the state the ESP fetches and browser can toggle
+let pinState = 'OFF';
 
 // Middleware
+console.log('[INIT] Registering middleware...');
 app.use(express.static(path.join(__dirname, 'public')));
-app.use('/espcontrol/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist')));
+console.log(`[STATIC] Serving /public from: ${path.join(__dirname, 'public')}`);
+
+app.use('/espcontrol/socket.io', (req, res, next) => {
+  console.log(`[REQUEST] Socket.IO static file requested: ${req.url}`);
+  next();
+}, express.static(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist')));
+
 app.use(express.urlencoded({ extended: true }));
 app.use(session({
   secret: SESSION_SECRET,
@@ -31,51 +38,58 @@ app.use(session({
   saveUninitialized: false,
 }));
 
-// Auth Middleware
+// Auth middleware
 function isAuthenticated(req, res, next) {
   if (req.session.loggedIn) return next();
   res.redirect('/login.html');
 }
 
-// Routes
-
-// Serve socket.io.js directly
+// Explicit socket.io.js file route
 app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js'));
+  const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
+  console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
+  res.sendFile(filePath);
 });
 
+// Routes
 app.get('/', isAuthenticated, (req, res) => {
+  console.log('[GET] / -> Serving index.html');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/control', (req, res) => {
-  // ESP8266 polls this endpoint every 2 seconds
+  console.log('[GET] /control -> Returning pinState:', pinState);
   res.send(pinState);
 });
 
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
+  console.log(`[LOGIN] Attempt with username: ${username}`);
   if (username === LOGIN_USERNAME && password === LOGIN_PASSWORD) {
+    console.log('[LOGIN] Success');
     req.session.loggedIn = true;
     res.redirect('/');
   } else {
+    console.log('[LOGIN] Failed');
     res.send('Invalid credentials. <a href="/login.html">Try again</a>.');
   }
 });
 
 // WebSocket
 io.on('connection', socket => {
-  console.log('New WebSocket client connected');
-  socket.emit('state', pinState); // Send current state to new client
+  console.log('[SOCKET.IO] New WebSocket client connected');
+  socket.emit('state', pinState);
 
   socket.on('toggle', () => {
     pinState = (pinState === 'OFF') ? 'ON' : 'OFF';
-    io.emit('state', pinState); // Broadcast new state
+    console.log(`[SOCKET.IO] State toggled to: ${pinState}`);
+    io.emit('state', pinState);
   });
 
   socket.on('set', state => {
     if (state === 'ON' || state === 'OFF') {
       pinState = state;
+      console.log(`[SOCKET.IO] State explicitly set to: ${pinState}`);
       io.emit('state', pinState);
     }
   });
@@ -83,5 +97,5 @@ io.on('connection', socket => {
 
 // Start server
 server.listen(port, () => {
-  console.log(`ESP Control Server running on http://localhost:${port}`);
+  console.log(`[STARTED] ESP Control Server running at http://localhost:${port}`);
 });
