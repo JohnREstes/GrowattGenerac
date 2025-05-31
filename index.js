@@ -38,6 +38,12 @@ function isAuthenticated(req, res, next) {
 }
 
 // Routes
+
+// Serve socket.io.js directly
+app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js'));
+});
+
 app.get('/', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
