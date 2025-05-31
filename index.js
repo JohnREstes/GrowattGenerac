@@ -34,7 +34,7 @@ app.use('/espcontrol', (req, res, next) => {
   if (req.path.startsWith('/socket.io')) return next(); // Allow socket path
   if (req.session.loggedIn) return next();
   console.log('[AUTH] Blocked unauthenticated access to:', req.originalUrl);
-  return res.redirect('/login.html');
+  return res.redirect('login.html');
 });
 
 // Serve static assets AFTER auth check
@@ -42,11 +42,11 @@ console.log('[INIT] Registering static route...');
 app.use((req, res, next) => {
   if (req.session.loggedIn) {
     express.static(path.join(__dirname, 'public'))(req, res, next);
-  } else if (req.path === '/login.html' || req.path === '/login' || req.path.startsWith('/espcontrol/socket.io')) {
+  } else if (req.path === 'login.html' || req.path === 'login' || req.path.startsWith('/espcontrol/socket.io')) {
     next(); // Allow login and socket
   } else {
     console.log('[AUTH] Redirecting unauthenticated access to login');
-    res.redirect('/login.html');
+    res.redirect('login.html');
   }
 });
 
