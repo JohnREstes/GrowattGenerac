@@ -48,10 +48,12 @@
   </label>
   <div id="status">Loading...</div>
 
+  <!-- Correct path to socket.io -->
   <script src="/espcontrol/socket.io/socket.io.js"></script>
 
   <script>
-    const socket = io();
+    // MUST specify path for subpath-based apps
+    const socket = io('/espcontrol');
 
     socket.on('state', state => {
       document.getElementById('pinToggle').checked = (state === 'ON');
