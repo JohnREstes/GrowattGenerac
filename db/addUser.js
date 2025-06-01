@@ -12,28 +12,42 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
+console.log('--- Add New User ---');
 rl.question('Username: ', username => {
   rl.question('Password: ', password => {
-    const saltRounds = 10;
-    bcrypt.hash(password, saltRounds, (err, hashed) => {
-      if (err) {
-        console.error('[ERROR] Failed to hash password:', err);
-        rl.close();
-        db.close();
-        return;
-      }
-
-      const stmt = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)');
-      stmt.run(username, hashed, function (err) {
+    rl.question('Device ID to assign: ', deviceId => {
+      const saltRounds = 10;
+      bcrypt.hash(password, saltRounds, (err, hashed) => {
         if (err) {
-          console.error('[ERROR] Failed to add user:', err.message);
-        } else {
-          console.log(`[SUCCESS] User '${username}' added with ID ${this.lastID}`);
-        }
-
-        stmt.finalize(() => {
+          console.error('[ERROR] Failed to hash password:', err);
           rl.close();
           db.close();
+          return;
+        }
+
+        const insertUser = 'INSERT INTO users (username, password) VALUES (?, ?)';
+        db.run(insertUser, [username, hashed], function (err) {
+          if (err) {
+            console.error('[ERROR] Failed to add user:', err.message);
+            rl.close();
+            db.close();
+            return;
+          }
+
+          const userId = this.lastID;
+          console.log(`[SUCCESS] User '${username}' added with ID ${userId}`);
+
+          const insertUserDevice = 'INSERT INTO user_devices (user_id, device_id) VALUES (?, ?)';
+          db.run(insertUserDevice, [userId, deviceId], function (err) {
+            if (err) {
+              console.error('[ERROR] Failed to link user to device:', err.message);
+            } else {
+              console.log(`[SUCCESS] Linked user ${userId} to device ${deviceId}`);
+            }
+
+            rl.close();
+            db.close();
+          });
         });
       });
     });
