@@ -3,6 +3,7 @@ body {
   text-align: center;
   padding-top: 50px;
 }
+
 .toggle {
   appearance: none;
   width: 60px;
@@ -29,7 +30,26 @@ body {
 .toggle:checked::before {
   transform: translateX(30px);
 }
+
 #status {
   margin-top: 20px;
   font-size: 1.2em;
+}
+
+#schedule {
+  margin-top: 40px;
+  text-align: center;
+}
+
+#events {
+  margin-top: 10px;
+}
+
+.event-row {
+  margin: 5px;
+}
+
+.event-row input,
+.event-row select {
+  margin-right: 10px;
 }

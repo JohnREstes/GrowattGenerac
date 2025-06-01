@@ -3,40 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <title>ESP8266 Control Panel</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/espcontrol/styles.css">
 </head>
 <body>
   <h1>ESP8266 GPIO Control</h1>
   <label>
-    <input type="checkbox" class="toggle" id="pinToggle">
+    <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
   </label>
   <div id="status">Loading...</div>
 
-  <h2>Set Schedule</h2>
-  <form id="scheduleForm">
-    <label>
-      On Time:
-      <input type="time" id="onTime">
-    </label>
-    <br>
-    <label>
-      Off Time:
-      <input type="time" id="offTime">
-    </label>
-    <br>
-    <label>
-      Timezone:
-      <select id="timezone">
-        <option value="America/Cancun">America/Cancun</option>
-        <option value="America/New_York">America/New_York</option>
-        <option value="UTC">UTC</option>
-      </select>
-    </label>
-    <br><br>
-    <button type="submit">Save Schedule</button>
-  </form>
+  <div id="schedule">
+    <h2>Schedule Settings</h2>
+
+    <label for="timezone">Timezone:</label>
+    <select id="timezone">
+      <option value="UTC">UTC</option>
+      <option value="America/New_York">America/New_York</option>
+      <option value="America/Cancun">America/Cancun</option>
+      <option value="America/Chicago">America/Chicago</option>
+      <option value="America/Los_Angeles">America/Los_Angeles</option>
+    </select>
+
+    <div id="events"></div>
+
+    <button onclick="addEvent()">+ Add Event</button>
+    <button onclick="saveSchedule()">💾 Save Schedule</button>
+
+    <div id="saveStatus" style="margin-top: 10px;"></div>
+  </div>
 
   <script src="/espcontrol/socket.io/socket.io.js"></script>
-  <script src="script.js"></script>
+  <script src="/espcontrol/script.js"></script>
 </body>
 </html>
