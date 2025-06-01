@@ -1,3 +1,5 @@
+//script.js
+
 const socket = io({ path: '/espcontrol/socket.io' });
 let currentDeviceId = null;
 let responseTimeout = null;
@@ -15,7 +17,18 @@ socket.on('state', ({ deviceId, state }) => {
 function togglePin() {
   const deviceId = getSelectedDeviceId();
   if (!deviceId) return alert('Please select a device.');
+  
+  // Temporarily show loading or indicate change in progress
+  document.getElementById('status').innerText = 'Sending toggle...';
+
   socket.emit('toggle', deviceId);
+
+  // Optional: fallback timeout in case the state update fails
+  setTimeout(() => {
+    if (document.getElementById('status').innerText === 'Sending toggle...') {
+      document.getElementById('status').innerText = 'No response from device.';
+    }
+  }, 3000);
 }
 
 function addEventRow(time = '', state = 'ON') {

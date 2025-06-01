@@ -160,7 +160,10 @@ io.on('connection', socket => {
     const newState = (deviceStates[deviceId] === 'ON') ? 'OFF' : 'ON';
     deviceStates[deviceId] = newState;
     console.log(`[SOCKET.IO] toggle -> Device ${deviceId} -> ${newState}`);
-    io.emit('state', { deviceId, state: newState });
+
+    // Option 1: Only update the triggering client
+    socket.emit('state', { deviceId, state: newState });
+
   });
 
   // Explicitly set device state
