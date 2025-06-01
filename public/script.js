@@ -1,8 +1,17 @@
 const socket = io({ path: '/espcontrol/socket.io' });
 
+let responseTimeout = null;
+
 socket.on('state', ({ deviceId, state }) => {
+  console.log(`[SOCKET] Received state for device ${deviceId}: ${state}`);
   const selectedId = getSelectedDeviceId();
-  if (deviceId !== selectedId) return; // Only update UI for the selected device
+  if (deviceId !== selectedId) return;
+
+  // Clear fallback timeout if response arrives
+  if (responseTimeout) {
+    clearTimeout(responseTimeout);
+    responseTimeout = null;
+  }
 
   document.getElementById('pinToggle').checked = (state === 'ON');
   document.getElementById('status').innerText = `Current State: ${state}`;
@@ -123,8 +132,7 @@ function loadDevices() {
         socket.emit('getState', deviceId);
         loadSchedule();
 
-        // Fallback timeout in case no response
-        setTimeout(() => {
+        responseTimeout = setTimeout(() => {
           if (statusLabel.innerText === 'Fetching state...') {
             statusLabel.innerText = 'No response from device.';
           }
@@ -142,8 +150,7 @@ function loadDevices() {
         socket.emit('getState', deviceId);
         loadSchedule();
 
-        // Add fallback for no response
-        setTimeout(() => {
+        responseTimeout = setTimeout(() => {
           if (statusLabel.innerText === 'Fetching state...') {
             statusLabel.innerText = 'No response from device.';
           }
