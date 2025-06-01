@@ -3,6 +3,6 @@ node_modules/
 *.log
 .DS_Store
 
-# Ignore SQLite DB files
+# Ignore
 db/espcontrol.db
 db/control.db
