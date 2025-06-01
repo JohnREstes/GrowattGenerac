@@ -102,6 +102,11 @@ function loadDevices() {
     .then(res => res.json())
     .then(devices => {
       const select = document.getElementById('deviceSelect');
+      const statusLabel = document.getElementById('status');
+
+      // Clear existing options
+      select.innerHTML = '<option value="">-- Choose Device --</option>';
+
       devices.forEach(d => {
         const opt = document.createElement('option');
         opt.value = d.id;
@@ -109,9 +114,15 @@ function loadDevices() {
         select.appendChild(opt);
       });
 
-      // Select first device if only one
+      if (devices.length === 0) {
+        statusLabel.innerText = 'No devices available.';
+        return;
+      }
+
+      // Auto-select first device if only one
       if (devices.length === 1) {
         select.value = devices[0].id;
+        statusLabel.innerText = 'Fetching state...';
         socket.emit('getState', devices[0].id);
         loadSchedule();
       }
@@ -119,11 +130,19 @@ function loadDevices() {
       // Listen for dropdown change
       select.addEventListener('change', () => {
         const deviceId = getSelectedDeviceId();
+        if (!deviceId) {
+          statusLabel.innerText = 'Please select a device.';
+          return;
+        }
+        statusLabel.innerText = 'Fetching state...';
         socket.emit('getState', deviceId);
         loadSchedule();
       });
     })
-    .catch(err => console.error('[LOAD] Failed to load devices', err));
+    .catch(err => {
+      document.getElementById('status').innerText = 'Error loading devices.';
+      console.error('[LOAD] Failed to load devices', err);
+    });
 }
 
 window.onload = () => {
