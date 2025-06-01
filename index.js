@@ -16,7 +16,7 @@ const port = 3020;
 
 const SESSION_SECRET = process.env.SESSION_SECRET;
 
-let pinState = 'OFF';
+const deviceStates = {}; // Example: { "1": "ON", "2": "OFF" }
 
 const io = socketIo(server, {
   path: '/espcontrol/socket.io'
@@ -49,9 +49,16 @@ app.use((req, res, next) => {
 
 // ✅ PUBLIC endpoint for ESP to poll GPIO state
 app.get('/espcontrol/control', (req, res) => {
-  console.log('[GET] /espcontrol/control -> Returning pinState:', pinState);
-  res.send(pinState);
+  const deviceId = req.query.device_id;
+  if (!deviceId) {
+    return res.status(400).send('Missing device_id');
+  }
+
+  const state = deviceStates[deviceId] || 'OFF';
+  console.log(`[GET] /espcontrol/control?device_id=${deviceId} -> ${state}`);
+  res.send(state);
 });
+
 
 
 // Serve static files under /espcontrol, with session protection
@@ -137,20 +144,29 @@ app.get('/espcontrol/', isAuthenticated, (req, res) => {
 // WebSocket logic
 io.on('connection', socket => {
   console.log(`[SOCKET.IO] New client connected: ${socket.id}`);
-  socket.emit('state', pinState);
 
-  socket.on('toggle', () => {
-    pinState = (pinState === 'OFF') ? 'ON' : 'OFF';
-    console.log(`[SOCKET.IO] State toggled to: ${pinState}`);
-    io.emit('state', pinState);
+  // Client requests current state for a specific device
+  socket.on('getState', deviceId => {
+    const state = deviceStates[deviceId] || 'OFF';
+    console.log(`[SOCKET.IO] getState -> Device ${deviceId}: ${state}`);
+    socket.emit('state', { deviceId, state });
   });
 
-  socket.on('set', state => {
-    if (state === 'ON' || state === 'OFF') {
-      pinState = state;
-      console.log(`[SOCKET.IO] State explicitly set to: ${pinState}`);
-      io.emit('state', pinState);
-    }
+  // Toggle device state
+  socket.on('toggle', deviceId => {
+    if (!deviceId) return;
+    const newState = (deviceStates[deviceId] === 'ON') ? 'OFF' : 'ON';
+    deviceStates[deviceId] = newState;
+    console.log(`[SOCKET.IO] toggle -> Device ${deviceId} -> ${newState}`);
+    io.emit('state', { deviceId, state: newState });
+  });
+
+  // Explicitly set device state
+  socket.on('set', ({ deviceId, state }) => {
+    if (!deviceId || (state !== 'ON' && state !== 'OFF')) return;
+    deviceStates[deviceId] = state;
+    console.log(`[SOCKET.IO] set -> Device ${deviceId} -> ${state}`);
+    io.emit('state', { deviceId, state });
   });
 
   socket.on('disconnect', reason => {
