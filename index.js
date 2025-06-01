@@ -67,7 +67,7 @@ app.get('/login.html', (req, res) => {
 });
 
 // Login handler
-app.post('/login', (req, res) => {
+app.post('/espcontrol/login', (req, res) => {
   const { username, password } = req.body;
   console.log(`[LOGIN] Attempt with username: ${username}`);
   if (username === LOGIN_USERNAME && password === LOGIN_PASSWORD) {
@@ -76,7 +76,7 @@ app.post('/login', (req, res) => {
     res.redirect('/espcontrol/');
   } else {
     console.log('[LOGIN] Failed');
-    res.send('Invalid credentials. <a href="/login.html">Try again</a>.');
+    res.send('Invalid credentials. <a href="/espcontrol/login.html">Try again</a>.');
   }
 });
 
