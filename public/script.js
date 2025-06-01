@@ -1,18 +1,13 @@
 const socket = io({ path: '/espcontrol/socket.io' });
-
+let currentDeviceId = null;
 let responseTimeout = null;
 
+// Handle incoming state updates
 socket.on('state', ({ deviceId, state }) => {
   console.log(`[SOCKET] Received state for device ${deviceId}: ${state}`);
-  const selectedId = getSelectedDeviceId();
-  if (deviceId !== selectedId) return;
+  if (deviceId !== currentDeviceId) return;
 
-  // Clear fallback timeout if response arrives
-  if (responseTimeout) {
-    clearTimeout(responseTimeout);
-    responseTimeout = null;
-  }
-
+  clearTimeout(responseTimeout); // Clear fallback if response arrives
   document.getElementById('pinToggle').checked = (state === 'ON');
   document.getElementById('status').innerText = `Current State: ${state}`;
 });
@@ -126,12 +121,13 @@ function loadDevices() {
 
       // If only one device, auto-select and fetch
       if (devices.length === 1) {
-        select.value = devices[0].id;
-        const deviceId = devices[0].id;
+        currentDeviceId = devices[0].id;
+        select.value = currentDeviceId;
         statusLabel.innerText = 'Fetching state...';
-        socket.emit('getState', deviceId);
+        socket.emit('getState', currentDeviceId);
         loadSchedule();
 
+        // Fallback in case no response
         responseTimeout = setTimeout(() => {
           if (statusLabel.innerText === 'Fetching state...') {
             statusLabel.innerText = 'No response from device.';
@@ -139,15 +135,15 @@ function loadDevices() {
         }, 3000);
       }
 
-      // Listen for user selection
+      // Handle manual selection
       select.addEventListener('change', () => {
-        const deviceId = getSelectedDeviceId();
-        if (!deviceId) {
+        currentDeviceId = getSelectedDeviceId();
+        if (!currentDeviceId) {
           statusLabel.innerText = 'Please select a device.';
           return;
         }
         statusLabel.innerText = 'Fetching state...';
-        socket.emit('getState', deviceId);
+        socket.emit('getState', currentDeviceId);
         loadSchedule();
 
         responseTimeout = setTimeout(() => {
