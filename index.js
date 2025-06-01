@@ -161,9 +161,8 @@ io.on('connection', socket => {
     deviceStates[deviceId] = newState;
     console.log(`[SOCKET.IO] toggle -> Device ${deviceId} -> ${newState}`);
 
-    // Option 1: Only update the triggering client
-    socket.emit('state', { deviceId, state: newState });
-
+    // FIX: Broadcast the state update to ALL connected clients
+    io.emit('state', { deviceId, state: newState }); // <--- Changed from socket.emit to io.emit
   });
 
   // Explicitly set device state
