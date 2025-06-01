@@ -33,7 +33,7 @@ app.use(session({
 function isAuthenticated(req, res, next) {
   if (req.session.loggedIn) return next();
   console.log('[AUTH] Redirecting unauthenticated request to login');
-  res.redirect('/login.html');
+  res.redirect('/espcontrol/login.html');
 }
 
 // Log all requests
@@ -42,19 +42,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files with access control
+// Serve static files under /espcontrol, with session protection
 app.use('/espcontrol', (req, res, next) => {
-  if (req.path.startsWith('/socket.io')) {
-    return next(); // Allow Socket.IO polling path
-  }
+  if (req.path.startsWith('/socket.io')) return next(); // Allow socket polling
+  if (
+    req.path === '/login.html' ||
+    req.path === '/login' ||
+    req.path === '/logout'
+  ) return next(); // Allow login/logout
   if (req.session.loggedIn) {
     return express.static(path.join(__dirname, 'public'))(req, res, next);
   }
   console.log('[AUTH] Blocked static file request:', req.originalUrl);
-  res.redirect('/login.html');
+  res.redirect('/espcontrol/login.html');
 });
 
-// Explicit route for socket.io.js
+// Serve socket.io.js explicitly
 app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
   const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
   console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
@@ -62,7 +65,7 @@ app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
 });
 
 // Login page
-app.get('/login.html', (req, res) => {
+app.get('/espcontrol/login.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
@@ -81,9 +84,9 @@ app.post('/espcontrol/login', (req, res) => {
 });
 
 // Logout handler
-app.get('/logout', (req, res) => {
+app.get('/espcontrol/logout', (req, res) => {
   req.session.destroy(() => {
-    res.redirect('/login.html');
+    res.redirect('/espcontrol/login.html');
   });
 });
 
@@ -135,4 +138,3 @@ io.on('connection', socket => {
 server.listen(port, () => {
   console.log(`[STARTED] ESP Control Server running at http://localhost:${port}`);
 });
-
