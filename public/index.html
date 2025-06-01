@@ -12,25 +12,21 @@
   </label>
   <div id="status">Loading...</div>
 
-  <div id="schedule">
-    <h2>Schedule Settings</h2>
+  <h2>Schedule Settings</h2>
 
-    <label for="timezone">Timezone:</label>
-    <select id="timezone">
-      <option value="UTC">UTC</option>
-      <option value="America/New_York">America/New_York</option>
-      <option value="America/Cancun">America/Cancun</option>
-      <option value="America/Chicago">America/Chicago</option>
-      <option value="America/Los_Angeles">America/Los_Angeles</option>
-    </select>
+  <label for="deviceSelect">Select Device:</label>
+  <select id="deviceSelect" onchange="loadSchedule()">
+    <option value="">-- Choose Device --</option>
+  </select>
 
-    <div id="events"></div>
-
-    <button onclick="addEvent()">+ Add Event</button>
-    <button onclick="saveSchedule()">💾 Save Schedule</button>
-
-    <div id="saveStatus" style="margin-top: 10px;"></div>
-  </div>
+  <label for="timezone">Timezone:</label>
+  <select id="timezone">
+    <option value="UTC">UTC</option>
+    <option value="America/New_York">America/New_York</option>
+    <option value="America/Cancun">America/Cancun</option>
+    <option value="America/Chicago">America/Chicago</option>
+    <option value="America/Los_Angeles">America/Los_Angeles</option>
+  </select>
 
   <script src="/espcontrol/socket.io/socket.io.js"></script>
   <script src="/espcontrol/script.js"></script>
