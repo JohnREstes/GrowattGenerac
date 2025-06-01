@@ -1,0 +1,7 @@
+{
+  "timezone": "America/Cancun",
+  "events": [
+    { "time": "08:00", "state": "ON" },
+    { "time": "20:00", "state": "OFF" }
+  ]
+}

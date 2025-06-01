@@ -8,6 +8,22 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
+const fs = require('fs');
+const schedulePath = path.join(__dirname, 'schedule.json');
+let scheduleData = { timezone: 'UTC', events: [] };
+
+// Load schedule at startup
+function loadSchedule() {
+  try {
+    const data = fs.readFileSync(schedulePath, 'utf8');
+    scheduleData = JSON.parse(data);
+    console.log('[SCHEDULE] Loaded:', scheduleData);
+  } catch (err) {
+    console.warn('[SCHEDULE] Could not load schedule.json:', err);
+  }
+}
+loadSchedule();
+
 const io = socketIo(server, {
   path: '/espcontrol/socket.io'
 });
@@ -135,7 +151,53 @@ io.on('connection', socket => {
   });
 });
 
+app.get('/espcontrol/api/schedule', isAuthenticated, (req, res) => {
+  res.json(scheduleData);
+});
+
+app.post('/espcontrol/api/schedule', isAuthenticated, express.json(), (req, res) => {
+  const { timezone, events } = req.body;
+  if (!timezone || !Array.isArray(events)) {
+    return res.status(400).send('Invalid schedule format.');
+  }
+
+  scheduleData = { timezone, events };
+  fs.writeFile(schedulePath, JSON.stringify(scheduleData, null, 2), err => {
+    if (err) {
+      console.error('[SCHEDULE] Save failed:', err);
+      return res.status(500).send('Failed to save schedule.');
+    }
+    console.log('[SCHEDULE] Updated and saved');
+    res.send('Schedule updated');
+  });
+});
+
 // Start the server
 server.listen(port, () => {
   console.log(`[STARTED] ESP Control Server running at http://localhost:${port}`);
 });
+
+setInterval(() => {
+  const now = new Date().toLocaleTimeString('en-US', {
+    timeZone: scheduleData.timezone,
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  scheduleData.events.forEach(event => {
+    if (event.time === now) {
+      pinState = event.state;
+      io.emit('state', pinState);
+      console.log(`[SCHEDULE] Triggered at ${now} -> ${pinState}`);
+    }
+  });
+}, 60 * 1000); // every minute
+
+try {
+  const data = fs.readFileSync(schedulePath, 'utf8');
+  scheduleData = JSON.parse(data);
+} catch (err) {
+  console.warn('[SCHEDULE] Could not load or parse schedule.json:', err);
+  scheduleData = { timezone: 'UTC', events: [] };
+}

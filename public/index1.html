@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ESP8266 Control Panel</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      padding-top: 50px;
+    }
+    .toggle {
+      appearance: none;
+      width: 60px;
+      height: 30px;
+      background: #ddd;
+      border-radius: 30px;
+      position: relative;
+      cursor: pointer;
+    }
+    .toggle:checked {
+      background: #4caf50;
+    }
+    .toggle::before {
+      content: '';
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      background: white;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: 0.3s;
+    }
+    .toggle:checked::before {
+      transform: translateX(30px);
+    }
+    #status {
+      margin-top: 20px;
+      font-size: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <h1>ESP8266 GPIO Control</h1>
+  <label>
+    <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
+  </label>
+  <div id="status">Loading...</div>
+
+  <script src="/espcontrol/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io({
+      path: '/espcontrol/socket.io'
+    });
+
+    socket.on('state', state => {
+      document.getElementById('pinToggle').checked = (state === 'ON');
+      document.getElementById('status').innerText = `Current State: ${state}`;
+    });
+
+    function togglePin() {
+      socket.emit('toggle');
+    }
+  </script>
+
+
+</body>
+</html>
