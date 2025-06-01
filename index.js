@@ -42,11 +42,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// API endpoint for ESP polling
-app.get('/control', (req, res) => {
-  console.log('[GET] /control -> Returning pinState:', pinState);
+// ✅ PUBLIC endpoint for ESP to poll GPIO state
+app.get('/espcontrol/control', (req, res) => {
+  console.log('[GET] /espcontrol/control -> Returning pinState:', pinState);
   res.send(pinState);
 });
+
 
 // Serve static files under /espcontrol, with session protection
 app.use('/espcontrol', (req, res, next) => {
