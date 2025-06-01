@@ -4,46 +4,35 @@ const session = require('express-session');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const bcrypt = require('bcrypt');
+const db = require('./db/database');
 
 const app = express();
 const server = http.createServer(app);
 
 const fs = require('fs');
-const schedulePath = path.join(__dirname, 'schedule.json');
-let scheduleData = { timezone: 'UTC', events: [] };
 
-// Load schedule at startup
-function loadSchedule() {
-  try {
-    const data = fs.readFileSync(schedulePath, 'utf8');
-    scheduleData = JSON.parse(data);
-    console.log('[SCHEDULE] Loaded:', scheduleData);
-  } catch (err) {
-    console.warn('[SCHEDULE] Could not load schedule.json:', err);
-  }
-}
-loadSchedule();
+const port = 3020;
+
+const SESSION_SECRET = process.env.SESSION_SECRET;
+
+const deviceStates = {}; // Example: { "1": "ON", "2": "OFF" }
 
 const io = socketIo(server, {
   path: '/espcontrol/socket.io'
 });
 
-const port = 3020;
-
-// Load credentials from .env
-const SESSION_SECRET = process.env.SESSION_SECRET;
-const LOGIN_USERNAME = process.env.LOGIN_USERNAME;
-const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD;
-
-let pinState = 'OFF';
-
 // Body + session middleware
 app.use(express.urlencoded({ extended: true }));
+
 app.use(session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  cookie: { maxAge: 2 * 60 * 60 * 1000 } // 2 hours
 }));
+
+app.use(express.json());
 
 // Auth check function
 function isAuthenticated(req, res, next) {
@@ -60,9 +49,16 @@ app.use((req, res, next) => {
 
 // ✅ PUBLIC endpoint for ESP to poll GPIO state
 app.get('/espcontrol/control', (req, res) => {
-  console.log('[GET] /espcontrol/control -> Returning pinState:', pinState);
-  res.send(pinState);
+  const deviceId = req.query.device_id;
+  if (!deviceId) {
+    return res.status(400).send('Missing device_id');
+  }
+
+  const state = deviceStates[deviceId] || 'OFF';
+  console.log(`[GET] /espcontrol/control?device_id=${deviceId} -> ${state}`);
+  res.send(state);
 });
+
 
 
 // Serve static files under /espcontrol, with session protection
@@ -92,18 +88,40 @@ app.get('/espcontrol/login.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Login handler
+// Login handler using SQLite
 app.post('/espcontrol/login', (req, res) => {
   const { username, password } = req.body;
   console.log(`[LOGIN] Attempt with username: ${username}`);
-  if (username === LOGIN_USERNAME && password === LOGIN_PASSWORD) {
-    console.log('[LOGIN] Success');
-    req.session.loggedIn = true;
-    res.redirect('/espcontrol/');
-  } else {
-    console.log('[LOGIN] Failed');
-    res.send('Invalid credentials. <a href="/espcontrol/login.html">Try again</a>.');
-  }
+
+  const query = `SELECT * FROM users WHERE username = ?`;
+  db.get(query, [username], (err, user) => {
+    if (err) {
+      console.error('[LOGIN] DB error:', err);
+      return res.send('Server error. Please try again later.');
+    }
+
+    if (!user) {
+      console.log('[LOGIN] User not found');
+      return res.send('Invalid username or password. <a href="/espcontrol/login.html">Try again</a>.');
+    }
+
+    bcrypt.compare(password, user.password, (err, result) => {
+      if (err) {
+        console.error('[LOGIN] Bcrypt error:', err);
+        return res.send('Server error. Please try again later.');
+      }
+
+      if (result) {
+        console.log('[LOGIN] Success');
+        req.session.loggedIn = true;
+        req.session.userId = user.id;
+        res.redirect('/espcontrol/');
+      } else {
+        console.log('[LOGIN] Invalid password');
+        res.send('Invalid username or password. <a href="/espcontrol/login.html">Try again</a>.');
+      }
+    });
+  });
 });
 
 // Logout handler
@@ -126,20 +144,29 @@ app.get('/espcontrol/', isAuthenticated, (req, res) => {
 // WebSocket logic
 io.on('connection', socket => {
   console.log(`[SOCKET.IO] New client connected: ${socket.id}`);
-  socket.emit('state', pinState);
 
-  socket.on('toggle', () => {
-    pinState = (pinState === 'OFF') ? 'ON' : 'OFF';
-    console.log(`[SOCKET.IO] State toggled to: ${pinState}`);
-    io.emit('state', pinState);
+  // Client requests current state for a specific device
+  socket.on('getState', deviceId => {
+    const state = deviceStates[deviceId] || 'OFF';
+    console.log(`[SOCKET.IO] getState -> Device ${deviceId}: ${state}`);
+    socket.emit('state', { deviceId, state });
   });
 
-  socket.on('set', state => {
-    if (state === 'ON' || state === 'OFF') {
-      pinState = state;
-      console.log(`[SOCKET.IO] State explicitly set to: ${pinState}`);
-      io.emit('state', pinState);
-    }
+  // Toggle device state
+  socket.on('toggle', deviceId => {
+    if (!deviceId) return;
+    const newState = (deviceStates[deviceId] === 'ON') ? 'OFF' : 'ON';
+    deviceStates[deviceId] = newState;
+    console.log(`[SOCKET.IO] toggle -> Device ${deviceId} -> ${newState}`);
+    io.emit('state', { deviceId, state: newState });
+  });
+
+  // Explicitly set device state
+  socket.on('set', ({ deviceId, state }) => {
+    if (!deviceId || (state !== 'ON' && state !== 'OFF')) return;
+    deviceStates[deviceId] = state;
+    console.log(`[SOCKET.IO] set -> Device ${deviceId} -> ${state}`);
+    io.emit('state', { deviceId, state });
   });
 
   socket.on('disconnect', reason => {
@@ -151,53 +178,67 @@ io.on('connection', socket => {
   });
 });
 
-app.get('/espcontrol/api/schedule', isAuthenticated, (req, res) => {
-  res.json(scheduleData);
+// Get schedule for a specific device
+app.get('/espcontrol/api/schedule/:deviceId', isAuthenticated, (req, res) => {
+  const deviceId = req.params.deviceId;
+  db.all(
+    `SELECT time, state FROM schedules WHERE device_id = ? ORDER BY time`,
+    [deviceId],
+    (err, rows) => {
+      if (err) {
+        console.error('[SCHEDULE] DB read error:', err);
+        return res.status(500).send('Failed to load schedule.');
+      }
+      res.json({ events: rows });
+    }
+  );
 });
 
-app.post('/espcontrol/api/schedule', isAuthenticated, express.json(), (req, res) => {
-  const { timezone, events } = req.body;
-  if (!timezone || !Array.isArray(events)) {
-    return res.status(400).send('Invalid schedule format.');
+// Save schedule for a specific device
+app.post('/espcontrol/api/schedule/:deviceId', isAuthenticated, express.json(), (req, res) => {
+  const deviceId = req.params.deviceId;
+  const { events } = req.body;
+
+  if (!Array.isArray(events)) {
+    return res.status(400).send('Invalid format');
   }
 
-  scheduleData = { timezone, events };
-  fs.writeFile(schedulePath, JSON.stringify(scheduleData, null, 2), err => {
-    if (err) {
-      console.error('[SCHEDULE] Save failed:', err);
-      return res.status(500).send('Failed to save schedule.');
+  db.serialize(() => {
+    db.run(`DELETE FROM schedules WHERE device_id = ?`, [deviceId]);
+
+    const stmt = db.prepare(`INSERT INTO schedules (device_id, time, state) VALUES (?, ?, ?)`);
+    for (const event of events) {
+      if (event.time && (event.state === 'ON' || event.state === 'OFF')) {
+        stmt.run(deviceId, event.time, event.state);
+      }
     }
-    console.log('[SCHEDULE] Updated and saved');
-    res.send('Schedule updated');
+    stmt.finalize(err => {
+      if (err) {
+        console.error('[SCHEDULE] Failed to save:', err);
+        return res.status(500).send('Failed to save schedule');
+      }
+      console.log(`[SCHEDULE] Updated schedule for device ${deviceId}`);
+      res.send('Schedule updated');
+    });
   });
+});
+
+app.get('/espcontrol/api/devices', isAuthenticated, (req, res) => {
+  const userId = req.session.userId;
+  db.all(
+    `SELECT id, device_name FROM devices WHERE user_id = ?`,
+    [userId],
+    (err, rows) => {
+      if (err) {
+        console.error('[DEVICES] DB read error:', err);
+        return res.status(500).send('Failed to load devices.');
+      }
+      res.json(rows);
+    }
+  );
 });
 
 // Start the server
 server.listen(port, () => {
   console.log(`[STARTED] ESP Control Server running at http://localhost:${port}`);
 });
-
-setInterval(() => {
-  const now = new Date().toLocaleTimeString('en-US', {
-    timeZone: scheduleData.timezone,
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-
-  scheduleData.events.forEach(event => {
-    if (event.time === now) {
-      pinState = event.state;
-      io.emit('state', pinState);
-      console.log(`[SCHEDULE] Triggered at ${now} -> ${pinState}`);
-    }
-  });
-}, 60 * 1000); // every minute
-
-try {
-  const data = fs.readFileSync(schedulePath, 'utf8');
-  scheduleData = JSON.parse(data);
-} catch (err) {
-  console.warn('[SCHEDULE] Could not load or parse schedule.json:', err);
-  scheduleData = { timezone: 'UTC', events: [] };
-}

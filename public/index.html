@@ -7,6 +7,10 @@
 </head>
 <body>
   <h1>ESP8266 GPIO Control</h1>
+
+  <!-- ✅ Logout button -->
+  <button onclick="location.href='/espcontrol/logout'" style="float: right; margin-top: -40px;">🚪 Logout</button>
+
   <label>
     <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
   </label>
@@ -14,6 +18,11 @@
 
   <div id="schedule">
     <h2>Schedule Settings</h2>
+
+    <label for="deviceSelect">Select Device:</label>
+    <select id="deviceSelect" onchange="loadSchedule()">
+      <option value="">-- Choose Device --</option>
+    </select>
 
     <label for="timezone">Timezone:</label>
     <select id="timezone">
