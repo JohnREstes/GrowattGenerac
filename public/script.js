@@ -1,4 +1,4 @@
-// script.js
+//script.js
 
 const socket = io({ path: '/espcontrol/socket.io' });
 let currentDeviceId = null;
@@ -24,15 +24,94 @@ function togglePin() {
   socket.emit('toggle', deviceId);
 
   // Optional: fallback timeout in case the state update fails
-  // Increase this value from 3000 (3 seconds) to something like 25000-30000 (25-30 seconds)
-  responseTimeout = setTimeout(() => { // Assign to responseTimeout
+  // Increased from 3000 (3 seconds) to 25000 (25 seconds)
+  responseTimeout = setTimeout(() => {
     if (document.getElementById('status').innerText === 'Sending toggle...') {
       document.getElementById('status').innerText = 'No response from device.';
     }
-  }, 25000); // <-- CHANGE THIS VALUE
+  }, 25000); // MODIFIED: Increased timeout
 }
 
-// ... (rest of your functions: addEventRow, addEvent, getSelectedDeviceId, saveSchedule, loadSchedule) ...
+function addEventRow(time = '', state = 'ON') {
+  const container = document.createElement('div');
+  container.className = 'event-row';
+
+  const timeInput = document.createElement('input');
+  timeInput.type = 'time';
+  timeInput.value = time;
+
+  const stateSelect = document.createElement('select');
+  ['ON', 'OFF'].forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.text = s;
+    if (s === state) opt.selected = true;
+    stateSelect.appendChild(opt);
+  });
+
+  const removeBtn = document.createElement('button');
+  removeBtn.textContent = '✖';
+  removeBtn.onclick = () => container.remove();
+
+  container.appendChild(timeInput);
+  container.appendChild(stateSelect);
+  container.appendChild(removeBtn);
+
+  document.getElementById('events').appendChild(container);
+}
+
+function addEvent() {
+  addEventRow();
+}
+
+function getSelectedDeviceId() {
+  return document.getElementById('deviceSelect').value;
+}
+
+function saveSchedule() {
+  const deviceId = getSelectedDeviceId();
+  if (!deviceId) return alert('Please select a device.');
+
+  const timezone = document.getElementById('timezone').value;
+  const events = Array.from(document.querySelectorAll('.event-row')).map(row => {
+    return {
+      time: row.querySelector('input').value,
+      state: row.querySelector('select').value
+    };
+  });
+
+  fetch(`/espcontrol/api/schedule/${deviceId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ events })
+  })
+    .then(res => res.text())
+    .then(msg => {
+      document.getElementById('saveStatus').innerText = msg;
+    })
+    .catch(err => {
+      document.getElementById('saveStatus').innerText = 'Error saving schedule.';
+      console.error(err);
+    });
+}
+
+function loadSchedule() {
+  const deviceId = getSelectedDeviceId();
+  if (!deviceId) return;
+
+  fetch(`/espcontrol/api/schedule/${deviceId}`)
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('events').innerHTML = ''; // Clear existing
+      if (data.timezone) {
+        document.getElementById('timezone').value = data.timezone;
+      }
+      if (data.events) {
+        data.events.forEach(event => addEventRow(event.time, event.state));
+      }
+    })
+    .catch(err => console.error('[LOAD] Failed to load schedule', err));
+}
 
 function loadDevices() {
   fetch('/espcontrol/api/devices')
@@ -67,7 +146,7 @@ function loadDevices() {
           if (statusLabel.innerText === 'Fetching state...') {
             statusLabel.innerText = 'No response from device.';
           }
-        }, 25000); // <-- CHANGE THIS VALUE
+        }, 25000); // MODIFIED: Increased timeout
       }
 
       // Handle manual selection
@@ -85,7 +164,7 @@ function loadDevices() {
           if (statusLabel.innerText === 'Fetching state...') {
             statusLabel.innerText = 'No response from device.';
           }
-        }, 25000); // <-- CHANGE THIS VALUE
+        }, 25000); // MODIFIED: Increased timeout
       });
     })
     .catch(err => {
