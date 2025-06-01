@@ -1,40 +1,42 @@
 // db/listUsersAndDevices.js
-
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const dbPath = path.join(__dirname, 'espcontrol.db');
 const db = new sqlite3.Database(dbPath);
 
-const query = `
-  SELECT users.id AS user_id, users.username, devices.id AS device_id, devices.device_name
-  FROM users
-  LEFT JOIN user_devices ON users.id = user_devices.user_id
-  LEFT JOIN devices ON user_devices.device_id = devices.id
-  ORDER BY users.id;
-`;
+console.log('\n--- User to Device Mapping ---');
 
-console.log('--- User to Device Mapping ---');
-
-db.all(query, [], (err, rows) => {
+db.all('SELECT * FROM users', [], (err, users) => {
   if (err) {
-    console.error('[ERROR] Failed to fetch data:', err.message);
+    console.error('[ERROR] Failed to fetch users:', err.message);
     db.close();
     return;
   }
 
-  if (rows.length === 0) {
-    console.log('No users or device mappings found.');
-  } else {
-    rows.forEach(row => {
-      console.log(`User: ${row.username} (ID: ${row.user_id})`);
-      if (row.device_id) {
-        console.log(`  ↳ Device: ${row.device_name} (ID: ${row.device_id})`);
-      } else {
-        console.log('  ↳ No linked device.');
-      }
-    });
-  }
+  users.forEach(user => {
+    console.log(`User: ${user.username} (ID: ${user.id})`);
+    db.all(
+      'SELECT * FROM devices WHERE user_id = ?',
+      [user.id],
+      (err, devices) => {
+        if (err) {
+          console.error('[ERROR] Failed to fetch devices:', err.message);
+          return;
+        }
 
-  db.close();
+        if (devices.length === 0) {
+          console.log('  ↳ No linked device.');
+        } else {
+          devices.forEach(device => {
+            console.log(
+              `  ↳ Device: ${device.device_name} (ID: ${device.id}, GPIO: ${device.gpio_pin})`
+            );
+          });
+        }
+      }
+    );
+  });
+
+  setTimeout(() => db.close(), 500); // Delay to let async logs complete
 });

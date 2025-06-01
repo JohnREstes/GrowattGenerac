@@ -12,41 +12,47 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-console.log('--- Add New User ---');
+console.log('--- Add New User and Device ---');
+
 rl.question('Username: ', username => {
   rl.question('Password: ', password => {
-    rl.question('Device ID to assign: ', deviceId => {
-      const saltRounds = 10;
-      bcrypt.hash(password, saltRounds, (err, hashed) => {
-        if (err) {
-          console.error('[ERROR] Failed to hash password:', err);
-          rl.close();
-          db.close();
-          return;
-        }
-
-        const insertUser = 'INSERT INTO users (username, password) VALUES (?, ?)';
-        db.run(insertUser, [username, hashed], function (err) {
+    rl.question('Device name to assign: ', deviceName => {
+      rl.question('GPIO pin to assign (e.g., D0): ', gpioPin => {
+        const saltRounds = 10;
+        bcrypt.hash(password, saltRounds, (err, hashedPassword) => {
           if (err) {
-            console.error('[ERROR] Failed to add user:', err.message);
+            console.error('[ERROR] Failed to hash password:', err);
             rl.close();
             db.close();
             return;
           }
 
-          const userId = this.lastID;
-          console.log(`[SUCCESS] User '${username}' added with ID ${userId}`);
-
-          const insertUserDevice = 'INSERT INTO user_devices (user_id, device_id) VALUES (?, ?)';
-          db.run(insertUserDevice, [userId, deviceId], function (err) {
+          // Step 1: Add user
+          const insertUserSQL = 'INSERT INTO users (username, password) VALUES (?, ?)';
+          db.run(insertUserSQL, [username, hashedPassword], function (err) {
             if (err) {
-              console.error('[ERROR] Failed to link user to device:', err.message);
-            } else {
-              console.log(`[SUCCESS] Linked user ${userId} to device ${deviceId}`);
+              console.error('[ERROR] Failed to add user:', err.message);
+              rl.close();
+              db.close();
+              return;
             }
 
-            rl.close();
-            db.close();
+            const userId = this.lastID;
+            console.log(`[SUCCESS] User '${username}' added with ID ${userId}`);
+
+            // Step 2: Add device (auto ID)
+            const insertDeviceSQL = 'INSERT INTO devices (device_name, gpio_pin, user_id) VALUES (?, ?, ?)';
+            db.run(insertDeviceSQL, [deviceName, gpioPin, userId], function (err) {
+              if (err) {
+                console.error('[ERROR] Failed to add device:', err.message);
+              } else {
+                const newDeviceId = this.lastID;
+                console.log(`[SUCCESS] Device '${deviceName}' added with ID ${newDeviceId}, GPIO ${gpioPin}, linked to user ${userId}`);
+              }
+
+              rl.close();
+              db.close();
+            });
           });
         });
       });
