@@ -1,5 +1,3 @@
-//script.js
-
 const socket = io({ path: '/espcontrol/socket.io' });
 
 socket.on('state', ({ deviceId, state }) => {
@@ -103,8 +101,6 @@ function loadDevices() {
     .then(devices => {
       const select = document.getElementById('deviceSelect');
       const statusLabel = document.getElementById('status');
-
-      // Clear existing options
       select.innerHTML = '<option value="">-- Choose Device --</option>';
 
       devices.forEach(d => {
@@ -119,15 +115,23 @@ function loadDevices() {
         return;
       }
 
-      // Auto-select first device if only one
+      // If only one device, auto-select and fetch
       if (devices.length === 1) {
         select.value = devices[0].id;
+        const deviceId = devices[0].id;
         statusLabel.innerText = 'Fetching state...';
-        socket.emit('getState', devices[0].id);
+        socket.emit('getState', deviceId);
         loadSchedule();
+
+        // Fallback timeout in case no response
+        setTimeout(() => {
+          if (statusLabel.innerText === 'Fetching state...') {
+            statusLabel.innerText = 'No response from device.';
+          }
+        }, 3000);
       }
 
-      // Listen for dropdown change
+      // Listen for user selection
       select.addEventListener('change', () => {
         const deviceId = getSelectedDeviceId();
         if (!deviceId) {
@@ -137,6 +141,13 @@ function loadDevices() {
         statusLabel.innerText = 'Fetching state...';
         socket.emit('getState', deviceId);
         loadSchedule();
+
+        // Add fallback for no response
+        setTimeout(() => {
+          if (statusLabel.innerText === 'Fetching state...') {
+            statusLabel.innerText = 'No response from device.';
+          }
+        }, 3000);
       });
     })
     .catch(err => {
