@@ -42,6 +42,12 @@ app.use((req, res, next) => {
   next();
 });
 
+// API endpoint for ESP polling
+app.get('/control', (req, res) => {
+  console.log('[GET] /control -> Returning pinState:', pinState);
+  res.send(pinState);
+});
+
 // Serve static files under /espcontrol, with session protection
 app.use('/espcontrol', (req, res, next) => {
   if (req.path.startsWith('/socket.io')) return next(); // Allow socket polling
@@ -98,12 +104,6 @@ app.get('/', (req, res) => {
 // Protected index route
 app.get('/espcontrol/', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// API endpoint for ESP polling
-app.get('/control', (req, res) => {
-  console.log('[GET] /control -> Returning pinState:', pinState);
-  res.send(pinState);
 });
 
 // WebSocket logic
