@@ -1,12 +1,19 @@
+//script.js
+
 const socket = io({ path: '/espcontrol/socket.io' });
 
-socket.on('state', state => {
+socket.on('state', ({ deviceId, state }) => {
+  const selectedId = getSelectedDeviceId();
+  if (deviceId !== selectedId) return; // Only update UI for the selected device
+
   document.getElementById('pinToggle').checked = (state === 'ON');
   document.getElementById('status').innerText = `Current State: ${state}`;
 });
 
 function togglePin() {
-  socket.emit('toggle');
+  const deviceId = getSelectedDeviceId();
+  if (!deviceId) return alert('Please select a device.');
+  socket.emit('toggle', deviceId);
 }
 
 function addEventRow(time = '', state = 'ON') {
@@ -100,6 +107,20 @@ function loadDevices() {
         opt.value = d.id;
         opt.text = d.device_name;
         select.appendChild(opt);
+      });
+
+      // Select first device if only one
+      if (devices.length === 1) {
+        select.value = devices[0].id;
+        socket.emit('getState', devices[0].id);
+        loadSchedule();
+      }
+
+      // Listen for dropdown change
+      select.addEventListener('change', () => {
+        const deviceId = getSelectedDeviceId();
+        socket.emit('getState', deviceId);
+        loadSchedule();
       });
     })
     .catch(err => console.error('[LOAD] Failed to load devices', err));
