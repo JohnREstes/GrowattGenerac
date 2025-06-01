@@ -164,5 +164,8 @@ function loadDevices() {
 }
 
 window.onload = () => {
-  loadDevices();
+  socket.on('connect', () => {
+    console.log('[SOCKET] Connected, now loading devices...');
+    loadDevices();
+  });
 };
