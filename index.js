@@ -3,8 +3,8 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const http = require('http');
-const socketIo = require('socket.io');
+const http = require('http'); // Still needed for creating the server
+// const socketIo = require('socket.io'); // REMOVED: No longer using Socket.IO
 const path = require('path');
 const bcrypt = require('bcrypt');
 const db = require('./db/database');
@@ -20,9 +20,9 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 
 const deviceStates = {}; // Example: { "1": "ON", "2": "OFF" }
 
-const io = socketIo(server, {
-  path: '/espcontrol/socket.io'
-});
+// const io = socketIo(server, { // REMOVED: No longer initializing Socket.IO
+//   path: '/espcontrol/socket.io'
+// });
 
 // Body + session middleware
 app.use(express.urlencoded({ extended: true }));
@@ -51,21 +51,33 @@ app.use((req, res, next) => {
 
 // ✅ PUBLIC endpoint for ESP to poll GPIO state
 app.get('/espcontrol/control', (req, res) => {
-  const deviceId = req.query.device_id;
+  const deviceId = req.query.deviceId; // Changed from device_id to deviceId to match script.js
   if (!deviceId) {
-    return res.status(400).send('Missing device_id');
+    return res.status(400).json({ error: 'Missing deviceId' }); // Return JSON error
   }
 
   const state = deviceStates[deviceId] || 'OFF';
-  console.log(`[GET] /espcontrol/control?device_id=${deviceId} -> ${state}`);
-  res.send(state);
+  console.log(`[GET] /espcontrol/control?deviceId=${deviceId} -> ${state}`);
+  res.json({ deviceId, state }); // Return JSON object
 });
 
+// ✅ New endpoint to handle device state toggling via HTTP POST
+app.post('/espcontrol/control', isAuthenticated, express.json(), (req, res) => {
+  const { deviceId, state } = req.body;
+  if (!deviceId || (state !== 'ON' && state !== 'OFF')) {
+    return res.status(400).json({ error: 'Invalid deviceId or state' });
+  }
+
+  deviceStates[deviceId] = state;
+  console.log(`[POST] /espcontrol/control -> Device ${deviceId} set to ${state}`);
+  // In a polling system, the ESP will pick this up on its next poll
+  res.json({ message: `Device ${deviceId} set to ${state}`, deviceId, state });
+});
 
 
 // Serve static files under /espcontrol, with session protection
 app.use('/espcontrol', (req, res, next) => {
-  if (req.path.startsWith('/socket.io')) return next(); // Allow socket polling
+  // Removed socket.io path allowance as it's no longer used
   if (
     req.path === '/login.html' ||
     req.path === '/login' ||
@@ -78,12 +90,12 @@ app.use('/espcontrol', (req, res, next) => {
   res.redirect('/espcontrol/login.html');
 });
 
-// Serve socket.io.js explicitly
-app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
-  const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
-  console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
-  res.sendFile(filePath);
-});
+// Removed: No longer serving socket.io.js explicitly
+// app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
+//   const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
+//   console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
+//   res.sendFile(filePath);
+// });
 
 // Login page
 app.get('/espcontrol/login.html', (req, res) => {
@@ -143,44 +155,8 @@ app.get('/espcontrol/', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// WebSocket logic
-io.on('connection', socket => {
-  console.log(`[SOCKET.IO] New client connected: ${socket.id}`);
-
-  // Client requests current state for a specific device
-  socket.on('getState', deviceId => {
-    const state = deviceStates[deviceId] || 'OFF';
-    console.log(`[SOCKET.IO] getState -> Device ${deviceId}: ${state}`);
-    socket.emit('state', { deviceId, state });
-  });
-
-  // Toggle device state
-  socket.on('toggle', deviceId => {
-    if (!deviceId) return;
-    const newState = (deviceStates[deviceId] === 'ON') ? 'OFF' : 'ON';
-    deviceStates[deviceId] = newState;
-    console.log(`[SOCKET.IO] toggle -> Device ${deviceId} -> ${newState}`);
-
-    // FIX: Broadcast the state update to ALL connected clients
-    io.emit('state', { deviceId, state: newState }); // <--- Changed from socket.emit to io.emit
-  });
-
-  // Explicitly set device state
-  socket.on('set', ({ deviceId, state }) => {
-    if (!deviceId || (state !== 'ON' && state !== 'OFF')) return;
-    deviceStates[deviceId] = state;
-    console.log(`[SOCKET.IO] set -> Device ${deviceId} -> ${state}`);
-    io.emit('state', { deviceId, state });
-  });
-
-  socket.on('disconnect', reason => {
-    console.log(`[SOCKET.IO] Client disconnected: ${socket.id}, Reason: ${reason}`);
-  });
-
-  socket.on('error', err => {
-    console.error(`[SOCKET.IO] Error on socket ${socket.id}:`, err);
-  });
-});
+// REMOVED: All WebSocket logic as it's no longer used
+// io.on('connection', socket => { ... });
 
 // Get schedule for a specific device
 app.get('/espcontrol/api/schedule/:deviceId', isAuthenticated, (req, res) => {
@@ -193,7 +169,7 @@ app.get('/espcontrol/api/schedule/:deviceId', isAuthenticated, (req, res) => {
         console.error('[SCHEDULE] DB read error:', err);
         return res.status(500).send('Failed to load schedule.');
       }
-      res.json({ events: rows });
+      res.json(rows); // Return just the rows, not an object with 'events' key
     }
   );
 });
