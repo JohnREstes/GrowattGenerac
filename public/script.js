@@ -38,9 +38,8 @@ async function togglePin() {
     }
 
     // Determine the desired new state
-    // If the toggle is currently checked (ON), the user wants to turn it OFF
-    // If the toggle is currently unchecked (OFF), the user wants to turn it ON
-    const newState = document.getElementById('pinToggle').checked ? 'OFF' : 'ON'; 
+    // ✅ CORRECTED LOGIC HERE: If the toggle is checked, user wants 'ON', otherwise 'OFF'
+    const newState = document.getElementById('pinToggle').checked ? 'ON' : 'OFF'; 
 
     document.getElementById('status').innerText = 'Sending toggle...';
 
@@ -188,8 +187,8 @@ async function loadDevices() {
 
         devices.forEach(device => {
             const option = document.createElement('option');
-            option.value = device.id;
-            option.textContent = device.device_name;
+            opt.value = device.id;
+            opt.textContent = device.device_name;
             select.appendChild(option);
         });
 
