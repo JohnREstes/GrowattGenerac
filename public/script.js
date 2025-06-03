@@ -187,8 +187,9 @@ async function loadDevices() {
 
         devices.forEach(device => {
             const option = document.createElement('option');
-            opt.value = device.id;
-            opt.textContent = device.device_name;
+            // ✅ CORRECTED LINES HERE: used 'option' instead of 'opt'
+            option.value = device.id; 
+            option.textContent = device.device_name;
             select.appendChild(option);
         });
 
