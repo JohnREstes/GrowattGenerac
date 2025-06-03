@@ -3,11 +3,13 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const http = require('http'); // Still needed for creating the server
-// const socketIo = require('socket.io'); // REMOVED: No longer using Socket.IO
+const http = require('http');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const db = require('./db/database');
+const cron = require('node-cron'); // NEW: For scheduling tasks
+const moment = require('moment'); // NEW: For date/time handling
+const momentTz = require('moment-timezone'); // NEW: For timezone handling
 
 const app = express();
 const server = http.createServer(app);
@@ -18,11 +20,14 @@ const port = 3020;
 
 const SESSION_SECRET = process.env.SESSION_SECRET;
 
-const deviceStates = {}; // Example: { "1": "ON", "2": "OFF" }
+const deviceStates = {}; // Example: { "1": "ON", "2": "OFF" } - now updated by schedule
 
-// const io = socketIo(server, { // REMOVED: No longer initializing Socket.IO
-//   path: '/espcontrol/socket.io'
-// });
+// Store loaded schedules in memory for quick access
+// Format: { deviceId: [{ time: "HH:MM", state: "ON/OFF" }, ...], ... }
+const loadedSchedules = {};
+// Store timezone for each device
+// Format: { deviceId: "America/Cancun" }
+const deviceTimezones = {};
 
 // Body + session middleware
 app.use(express.urlencoded({ extended: true }));
@@ -49,7 +54,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ PUBLIC endpoint for ESP to poll GPIO state
+// ✅ PUBLIC endpoint for ESP to poll GPIO state (UPDATED to match client and JSON)
 app.get('/espcontrol/control', (req, res) => {
   const deviceId = req.query.deviceId; // Changed from device_id to deviceId to match script.js
   if (!deviceId) {
@@ -77,7 +82,7 @@ app.post('/espcontrol/control', isAuthenticated, express.json(), (req, res) => {
 
 // Serve static files under /espcontrol, with session protection
 app.use('/espcontrol', (req, res, next) => {
-  // Removed socket.io path allowance as it's no longer used
+  // Removed socket.io path check as we are no longer using it for control
   if (
     req.path === '/login.html' ||
     req.path === '/login' ||
@@ -90,12 +95,7 @@ app.use('/espcontrol', (req, res, next) => {
   res.redirect('/espcontrol/login.html');
 });
 
-// Removed: No longer serving socket.io.js explicitly
-// app.get('/espcontrol/socket.io/socket.io.js', (req, res) => {
-//   const filePath = path.join(__dirname, 'node_modules', 'socket.io-client', 'dist', 'socket.io.js');
-//   console.log(`[SERVE] socket.io.js requested. Path: ${filePath}`);
-//   res.sendFile(filePath);
-// });
+// Removed explicit socket.io.js serving as it's no longer used for control
 
 // Login page
 app.get('/espcontrol/login.html', (req, res) => {
@@ -155,50 +155,73 @@ app.get('/espcontrol/', isAuthenticated, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// REMOVED: All WebSocket logic as it's no longer used
-// io.on('connection', socket => { ... });
-
-// Get schedule for a specific device
+// Get schedule for a specific device (UPDATED to fetch timezone)
 app.get('/espcontrol/api/schedule/:deviceId', isAuthenticated, (req, res) => {
   const deviceId = req.params.deviceId;
-  db.all(
-    `SELECT time, state FROM schedules WHERE device_id = ? ORDER BY time`,
-    [deviceId],
-    (err, rows) => {
-      if (err) {
-        console.error('[SCHEDULE] DB read error:', err);
-        return res.status(500).send('Failed to load schedule.');
-      }
-      res.json(rows); // Return just the rows, not an object with 'events' key
+  db.get(`SELECT timezone FROM devices WHERE id = ?`, [deviceId], (err, row) => {
+    if (err) {
+      console.error('[SCHEDULE] DB read timezone error:', err);
+      // Even if timezone fails, try to return schedule
+      return res.status(500).send('Failed to load device timezone.'); 
     }
-  );
+    const timezone = row ? row.timezone : 'UTC'; // Default to UTC if not set
+
+    db.all(
+      `SELECT time, state FROM schedules WHERE device_id = ? ORDER BY time`,
+      [deviceId],
+      (err, rows) => {
+        if (err) {
+          console.error('[SCHEDULE] DB read schedule error:', err);
+          return res.status(500).send('Failed to load schedule.');
+        }
+        res.json({ events: rows, timezone: timezone }); // Return both events and timezone
+      }
+    );
+  });
 });
 
-// Save schedule for a specific device
+// Save schedule for a specific device (UPDATED to save timezone)
 app.post('/espcontrol/api/schedule/:deviceId', isAuthenticated, express.json(), (req, res) => {
   const deviceId = req.params.deviceId;
-  const { events } = req.body;
+  const { events, timezone } = req.body; // NEW: timezone also sent from client
 
   if (!Array.isArray(events)) {
     return res.status(400).send('Invalid format');
   }
 
   db.serialize(() => {
-    db.run(`DELETE FROM schedules WHERE device_id = ?`, [deviceId]);
-
-    const stmt = db.prepare(`INSERT INTO schedules (device_id, time, state) VALUES (?, ?, ?)`);
-    for (const event of events) {
-      if (event.time && (event.state === 'ON' || event.state === 'OFF')) {
-        stmt.run(deviceId, event.time, event.state);
-      }
-    }
-    stmt.finalize(err => {
+    // Update device timezone
+    db.run(`UPDATE devices SET timezone = ? WHERE id = ?`, [timezone, deviceId], function(err) {
       if (err) {
-        console.error('[SCHEDULE] Failed to save:', err);
-        return res.status(500).send('Failed to save schedule');
+        console.error('[SCHEDULE] Failed to save timezone:', err);
+        return res.status(500).send('Failed to save device timezone.');
       }
-      console.log(`[SCHEDULE] Updated schedule for device ${deviceId}`);
-      res.send('Schedule updated');
+      console.log(`[SCHEDULE] Updated timezone for device ${deviceId} to ${timezone}`);
+    });
+
+    // Clear existing schedule
+    db.run(`DELETE FROM schedules WHERE device_id = ?`, [deviceId], function(err) {
+      if (err) {
+        console.error('[SCHEDULE] Failed to clear old schedule:', err);
+        return res.status(500).send('Failed to clear old schedule.');
+      }
+
+      // Insert new schedule events
+      const stmt = db.prepare(`INSERT INTO schedules (device_id, time, state) VALUES (?, ?, ?)`);
+      for (const event of events) {
+        if (event.time && (event.state === 'ON' || event.state === 'OFF')) {
+          stmt.run(deviceId, event.time, event.state);
+        }
+      }
+      stmt.finalize(err => {
+        if (err) {
+          console.error('[SCHEDULE] Failed to save new schedule:', err);
+          return res.status(500).send('Failed to save schedule');
+        }
+        console.log(`[SCHEDULE] Updated schedule for device ${deviceId}`);
+        loadAllSchedules(); // Reload all schedules after a save
+        res.send('Schedule updated');
+      });
     });
   });
 });
@@ -218,7 +241,97 @@ app.get('/espcontrol/api/devices', isAuthenticated, (req, res) => {
   );
 });
 
+// NEW SCHEDULING LOGIC BELOW
+
+// Function to load all schedules from the database
+function loadAllSchedules() {
+  console.log('[SCHEDULER] Loading all schedules from database...');
+  db.all(
+    `SELECT s.device_id, s.time, s.state, d.timezone
+     FROM schedules s
+     JOIN devices d ON s.device_id = d.id`,
+    (err, rows) => {
+      if (err) {
+        console.error('[SCHEDULER] Error loading schedules:', err);
+        return;
+      }
+
+      // Clear previous schedules
+      for (const deviceId in loadedSchedules) {
+        delete loadedSchedules[deviceId];
+      }
+      for (const deviceId in deviceTimezones) {
+        delete deviceTimezones[deviceId];
+      }
+
+      rows.forEach(row => {
+        if (!loadedSchedules[row.device_id]) {
+          loadedSchedules[row.device_id] = [];
+        }
+        loadedSchedules[row.device_id].push({ time: row.time, state: row.state });
+        deviceTimezones[row.device_id] = row.timezone || 'UTC'; // Store timezone
+      });
+      console.log(`[SCHEDULER] Loaded schedules for ${Object.keys(loadedSchedules).length} devices.`);
+      // console.log("Loaded schedules:", loadedSchedules); // Uncomment for debugging
+    }
+  );
+}
+
+// Function to check schedules and execute actions
+function checkSchedules() {
+  const now = moment(); // Current time in system's local timezone
+  
+  for (const deviceId in loadedSchedules) {
+    const schedules = loadedSchedules[deviceId];
+    const deviceTz = deviceTimezones[deviceId]; // Get timezone for this device
+
+    if (!momentTz.tz.zone(deviceTz)) {
+        console.error(`[SCHEDULER] Invalid timezone for device ${deviceId}: ${deviceTz}. Skipping schedule check.`);
+        continue;
+    }
+
+    const nowInDeviceTz = momentTz.tz(now, deviceTz); // Convert current time to device's timezone
+    const currentMinuteOfDay = nowInDeviceTz.hours() * 60 + nowInDeviceTz.minutes();
+
+    schedules.forEach(event => {
+      const [hour, minute] = event.time.split(':').map(Number);
+      const eventMinuteOfDay = hour * 60 + minute;
+
+      // Check if the scheduled time matches the current minute in the device's timezone
+      if (currentMinuteOfDay === eventMinuteOfDay) {
+        // Prevent multiple triggers within the same minute
+        const lastTriggerKey = `${deviceId}-${event.time}-${event.state}`;
+        const lastTriggerMinute = global.lastScheduleTriggeredMinute || {};
+        
+        if (lastTriggerMinute[lastTriggerKey] !== currentMinuteOfDay) {
+          console.log(`[SCHEDULER] Executing scheduled event for device ${deviceId} at ${nowInDeviceTz.format('HH:mm z')} (target: ${event.time}): set to ${event.state}`);
+          deviceStates[deviceId] = event.state; // Update the in-memory state
+          // Store that this schedule was triggered for this minute
+          lastTriggerMinute[lastTriggerKey] = currentMinuteOfDay;
+          global.lastScheduleTriggeredMinute = lastTriggerMinute; // Save globally
+        } else {
+          // console.log(`[SCHEDULER] Skipping duplicate trigger for device ${deviceId} at ${event.time}`);
+        }
+      }
+    });
+  }
+}
+
+// Initialize an object to keep track of the last minute a schedule was triggered
+// This prevents multiple triggers if cron runs slightly off or if execution takes time
+global.lastScheduleTriggeredMinute = {};
+
+
+// Load schedules on server start
+loadAllSchedules();
+
+// Schedule a cron job to check schedules every minute
+cron.schedule('* * * * *', () => { // Runs every minute
+  checkSchedules();
+});
+
 // Start the server
 server.listen(port, () => {
   console.log(`[STARTED] ESP Control Server running at http://localhost:${port}`);
+  console.log(`[SCHEDULER] Cron job scheduled to check schedules every minute.`);
 });

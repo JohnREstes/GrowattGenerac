@@ -12,8 +12,8 @@ async function fetchDeviceState() {
     }
 
     try {
-        const response = await fetch(`/espcontrol/control?deviceId=${currentDeviceId}`);
-        const data = await response.json();
+        const response = await fetch(`/espcontrol/control?deviceId=${currentDeviceId}`); // Use deviceId
+        const data = await response.json(); // Expect JSON
 
         if (response.ok) {
             console.log(`[HTTP] Received state for device ${data.deviceId}: ${data.state}`);
@@ -37,8 +37,7 @@ async function togglePin() {
         return;
     }
 
-    // Determine the desired new state
-    // ✅ CORRECTED LOGIC HERE: If the toggle is checked, user wants 'ON', otherwise 'OFF'
+    // Determine the desired new state based on the checkbox's *new* state after the click
     const newState = document.getElementById('pinToggle').checked ? 'ON' : 'OFF'; 
 
     document.getElementById('status').innerText = 'Sending toggle...';
@@ -78,8 +77,9 @@ function addEventRow(time = '', state = 'ON') {
     const stateSelect = document.createElement('select');
     ['ON', 'OFF'].forEach(s => {
         const opt = document.createElement('option');
+        // FIX: Use opt.textContent instead of opt.text for consistency
         opt.value = s;
-        opt.textContent = s;
+        opt.textContent = s; 
         if (s === state) opt.selected = true;
         stateSelect.appendChild(opt);
     });
@@ -112,13 +112,15 @@ async function saveSchedule() {
         }
     });
 
+    const timezone = document.getElementById('timezone').value; // Get selected timezone
+
     try {
         const response = await fetch(`/espcontrol/api/schedule/${deviceId}`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ events }),
+            body: JSON.stringify({ events, timezone }), // Send timezone with events
         });
 
         const statusMessage = document.getElementById('saveStatus');
@@ -126,12 +128,12 @@ async function saveSchedule() {
             statusMessage.textContent = 'Schedule saved successfully!';
             statusMessage.style.color = 'green';
         } else {
-            const errorData = await response.text(); // Get raw error message
+            const errorData = await response.text();
             statusMessage.textContent = `Failed to save schedule: ${errorData}`;
             statusMessage.style.color = 'red';
             console.error('Failed to save schedule:', response.status, errorData);
         }
-        setTimeout(() => statusMessage.textContent = '', 3000); // Clear message
+        setTimeout(() => statusMessage.textContent = '', 3000);
     } catch (error) {
         console.error('Error saving schedule:', error);
         document.getElementById('saveStatus').textContent = 'Network error saving schedule.';
@@ -149,13 +151,17 @@ async function loadSchedule() {
 
     try {
         const response = await fetch(`/espcontrol/api/schedule/${deviceId}`);
-        const schedule = await response.json();
-
+        const data = await response.json(); // Expect { events: [...], timezone: "..." }
+        
         const eventsContainer = document.getElementById('events');
         eventsContainer.innerHTML = ''; // Clear existing events
 
-        if (schedule.length > 0) {
-            schedule.forEach(event => addEventRow(event.time, event.state));
+        if (data.timezone) { // Set timezone dropdown
+            document.getElementById('timezone').value = data.timezone;
+        }
+
+        if (data.events && data.events.length > 0) {
+            data.events.forEach(event => addEventRow(event.time, event.state));
         } else {
             eventsContainer.innerHTML = '<p>No schedule found. Add new events.</p>';
         }
@@ -187,7 +193,6 @@ async function loadDevices() {
 
         devices.forEach(device => {
             const option = document.createElement('option');
-            // ✅ CORRECTED LINES HERE: used 'option' instead of 'opt'
             option.value = device.id; 
             option.textContent = device.device_name;
             select.appendChild(option);

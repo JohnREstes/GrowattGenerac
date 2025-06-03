@@ -14,29 +14,38 @@ db.all('SELECT * FROM users', [], (err, users) => {
     return;
   }
 
-  users.forEach(user => {
-    console.log(`User: ${user.username} (ID: ${user.id})`);
-    db.all(
-      'SELECT * FROM devices WHERE user_id = ?',
-      [user.id],
-      (err, devices) => {
-        if (err) {
-          console.error('[ERROR] Failed to fetch devices:', err.message);
-          return;
-        }
+  // Use a Promise.all or async/await to ensure all device fetches complete before closing DB
+  const promises = users.map(user => {
+    return new Promise((resolve, reject) => {
+      console.log(`User: ${user.username} (ID: ${user.id})`);
+      db.all(
+        'SELECT * FROM devices WHERE user_id = ?',
+        [user.id],
+        (err, devices) => {
+          if (err) {
+            console.error('[ERROR] Failed to fetch devices:', err.message);
+            reject(err);
+            return;
+          }
 
-        if (devices.length === 0) {
-          console.log('  ↳ No linked device.');
-        } else {
-          devices.forEach(device => {
-            console.log(
-              `  ↳ Device: ${device.device_name} (ID: ${device.id}, GPIO: ${device.gpio_pin})`
-            );
-          });
+          if (devices.length === 0) {
+            console.log('  ↳ No linked device.');
+          } else {
+            devices.forEach(device => {
+              // Removed GPIO: ${device.gpio_pin} as it's no longer in the schema
+              console.log(
+                `  ↳ Device: ${device.device_name} (ID: ${device.id})`
+              );
+            });
+          }
+          resolve();
         }
-      }
-    );
+      );
+    });
   });
 
-  setTimeout(() => db.close(), 500); // Delay to let async logs complete
+  Promise.all(promises)
+    .finally(() => { // Ensure DB is closed after all ops
+      db.close();
+    });
 });
