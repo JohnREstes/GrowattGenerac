@@ -51,6 +51,22 @@ const db = new sqlite3.Database(dbPath, (err) => {
         else console.log('[DB] Schedules table ensured.');
       });
 
+      // ✅ NEW TABLE: integrations
+      db.run(`
+        CREATE TABLE IF NOT EXISTS integrations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          integration_type TEXT NOT NULL, -- e.g., 'Growatt', 'SolarEdge', 'Tesla Powerwall'
+          name TEXT NOT NULL, -- A user-friendly name for this specific integration instance
+          settings_json TEXT NOT NULL, -- JSON string containing credentials and other settings (e.g., { "username": "...", "password": "...", "server": "..." })
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          UNIQUE(user_id, name) -- Ensure a user doesn't have duplicate integration names
+        )
+      `, (err) => {
+        if (err) console.error('[DB] Error creating integrations table:', err.message);
+        else console.log('[DB] Integrations table ensured.');
+      });
+
       // Add a default user if none exist
       // This is for initial setup. You can remove this block after your first run.
       db.get(`SELECT COUNT(*) as count FROM users`, (err, row) => {
