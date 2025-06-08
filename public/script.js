@@ -1,35 +1,52 @@
-//script.js
-
-// No Socket.IO here anymore
 let currentDeviceId = null;
 let pollIntervalId = null; // To store the interval for polling
 
-// Function to fetch the device state from the server
+// --- Helper Functions ---
+function getSelectedDeviceId() {
+    const select = document.getElementById('deviceSelect');
+    return select.value;
+}
+
+async function fetchData(url, method = 'GET', body = null) {
+    const options = {
+        method: method,
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    };
+    if (body) {
+        options.body = JSON.stringify(body);
+    }
+    const response = await fetch(url, options);
+    // Attempt to parse JSON, but gracefully handle non-JSON responses (like plain text errors)
+    const text = await response.text();
+    try {
+        const json = JSON.parse(text);
+        return { ok: response.ok, data: json, status: response.status };
+    } catch (e) {
+        return { ok: response.ok, data: { error: text || response.statusText }, status: response.status };
+    }
+}
+
+// --- Device Control Functions ---
 async function fetchDeviceState() {
     if (!currentDeviceId) {
         document.getElementById('status').innerText = 'Please select a device.';
         return;
     }
 
-    try {
-        const response = await fetch(`/espcontrol/control?deviceId=${currentDeviceId}`); // Use deviceId
-        const data = await response.json(); // Expect JSON
+    const { ok, data, status } = await fetchData(`/espcontrol/control?deviceId=${currentDeviceId}`);
 
-        if (response.ok) {
-            console.log(`[HTTP] Received state for device ${data.deviceId}: ${data.state}`);
-            document.getElementById('pinToggle').checked = (data.state === 'ON');
-            document.getElementById('status').innerText = `Current State: ${data.state}`;
-        } else {
-            console.error(`[HTTP] Error fetching state: ${data.error || response.statusText}`);
-            document.getElementById('status').innerText = `Error: ${data.error || response.statusText}`;
-        }
-    } catch (error) {
-        console.error('[HTTP] Fetch error:', error);
-        document.getElementById('status').innerText = 'Connection error.';
+    if (ok) {
+        console.log(`[HTTP] Received state for device ${data.deviceId}: ${data.state}`);
+        document.getElementById('pinToggle').checked = (data.state === 'ON');
+        document.getElementById('status').innerText = `Current State: ${data.state}`;
+    } else {
+        console.error(`[HTTP] Error fetching state: ${data.error || status}`);
+        document.getElementById('status').innerText = `Error: ${data.error || status}`;
     }
 }
 
-// Function to toggle the pin state on the server
 async function togglePin() {
     const deviceId = getSelectedDeviceId();
     if (!deviceId) {
@@ -37,35 +54,21 @@ async function togglePin() {
         return;
     }
 
-    // Determine the desired new state based on the checkbox's *new* state after the click
-    const newState = document.getElementById('pinToggle').checked ? 'ON' : 'OFF'; 
-
+    const newState = document.getElementById('pinToggle').checked ? 'ON' : 'OFF';
     document.getElementById('status').innerText = 'Sending toggle...';
 
-    try {
-        const response = await fetch('/espcontrol/control', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ deviceId: deviceId, state: newState })
-        });
-        const data = await response.json();
+    const { ok, data, status } = await fetchData('/espcontrol/control', 'POST', { deviceId: deviceId, state: newState });
 
-        if (response.ok) {
-            console.log(`[HTTP] Toggle successful: ${data.message}`);
-            // After successful toggle, immediately fetch the new state to update the UI
-            fetchDeviceState(); 
-        } else {
-            console.error(`[HTTP] Toggle error: ${data.error || response.statusText}`);
-            document.getElementById('status').innerText = `Error: ${data.error || response.statusText}`;
-        }
-    } catch (error) {
-        console.error('[HTTP] Toggle fetch error:', error);
-        document.getElementById('status').innerText = 'Connection error during toggle.';
+    if (ok) {
+        console.log(`[HTTP] Toggle successful: ${data.message}`);
+        fetchDeviceState();
+    } else {
+        console.error(`[HTTP] Toggle error: ${data.error || status}`);
+        document.getElementById('status').innerText = `Error: ${data.error || status}`;
     }
 }
 
+// --- Schedule Functions ---
 function addEventRow(time = '', state = 'ON') {
     const container = document.createElement('div');
     container.className = 'event-row';
@@ -77,9 +80,8 @@ function addEventRow(time = '', state = 'ON') {
     const stateSelect = document.createElement('select');
     ['ON', 'OFF'].forEach(s => {
         const opt = document.createElement('option');
-        // FIX: Use opt.textContent instead of opt.text for consistency
         opt.value = s;
-        opt.textContent = s; 
+        opt.textContent = s;
         if (s === state) opt.selected = true;
         stateSelect.appendChild(opt);
     });
@@ -112,35 +114,21 @@ async function saveSchedule() {
         }
     });
 
-    const timezone = document.getElementById('timezone').value; // Get selected timezone
+    const timezone = document.getElementById('timezone').value;
 
-    try {
-        const response = await fetch(`/espcontrol/api/schedule/${deviceId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ events, timezone }), // Send timezone with events
-        });
+    const { ok, data, status } = await fetchData(`/espcontrol/api/schedule/${deviceId}`, 'POST', { events, timezone });
 
-        const statusMessage = document.getElementById('saveStatus');
-        if (response.ok) {
-            statusMessage.textContent = 'Schedule saved successfully!';
-            statusMessage.style.color = 'green';
-        } else {
-            const errorData = await response.text();
-            statusMessage.textContent = `Failed to save schedule: ${errorData}`;
-            statusMessage.style.color = 'red';
-            console.error('Failed to save schedule:', response.status, errorData);
-        }
-        setTimeout(() => statusMessage.textContent = '', 3000);
-    } catch (error) {
-        console.error('Error saving schedule:', error);
-        document.getElementById('saveStatus').textContent = 'Network error saving schedule.';
-        document.getElementById('saveStatus').style.color = 'red';
+    const statusMessage = document.getElementById('saveStatus');
+    if (ok) {
+        statusMessage.textContent = 'Schedule saved successfully!';
+        statusMessage.style.color = 'green';
+    } else {
+        statusMessage.textContent = `Failed to save schedule: ${data.error}`;
+        statusMessage.style.color = 'red';
+        console.error('Failed to save schedule:', status, data.error);
     }
+    setTimeout(() => statusMessage.textContent = '', 3000);
 }
-
 
 async function loadSchedule() {
     const deviceId = getSelectedDeviceId();
@@ -149,14 +137,13 @@ async function loadSchedule() {
         return;
     }
 
-    try {
-        const response = await fetch(`/espcontrol/api/schedule/${deviceId}`);
-        const data = await response.json(); // Expect { events: [...], timezone: "..." }
-        
-        const eventsContainer = document.getElementById('events');
-        eventsContainer.innerHTML = ''; // Clear existing events
+    const { ok, data, status } = await fetchData(`/espcontrol/api/schedule/${deviceId}`);
 
-        if (data.timezone) { // Set timezone dropdown
+    const eventsContainer = document.getElementById('events');
+    eventsContainer.innerHTML = '';
+
+    if (ok) {
+        if (data.timezone) {
             document.getElementById('timezone').value = data.timezone;
         }
 
@@ -165,26 +152,24 @@ async function loadSchedule() {
         } else {
             eventsContainer.innerHTML = '<p>No schedule found. Add new events.</p>';
         }
-    } catch (error) {
-        console.error('Error loading schedule:', error);
-        document.getElementById('events').innerHTML = '<p>Error loading schedule.</p>';
+    } else {
+        console.error('Error loading schedule:', status, data.error);
+        eventsContainer.innerHTML = '<p>Error loading schedule.</p>';
     }
 }
 
-
-// Helper to get selected device ID
-function getSelectedDeviceId() {
-    const select = document.getElementById('deviceSelect');
-    return select.value;
-}
-
-// Load devices from the server and populate the dropdown
+// --- Device List Loading ---
 async function loadDevices() {
     try {
-        const response = await fetch('/espcontrol/api/devices');
-        const devices = await response.json();
+        const { ok, data: devices, status } = await fetchData('/espcontrol/api/devices');
         const select = document.getElementById('deviceSelect');
-        select.innerHTML = '<option value="">-- Choose Device --</option>'; // Clear existing options
+        select.innerHTML = '<option value="">-- Choose Device --</option>';
+
+        if (!ok) {
+            document.getElementById('status').innerText = `Error loading devices: ${devices.error}`;
+            console.error('[LOAD] Failed to load devices', status, devices.error);
+            return;
+        }
 
         if (devices.length === 0) {
             document.getElementById('status').innerText = 'No devices available.';
@@ -193,30 +178,28 @@ async function loadDevices() {
 
         devices.forEach(device => {
             const option = document.createElement('option');
-            option.value = device.id; 
+            option.value = device.id;
             option.textContent = device.device_name;
             select.appendChild(option);
         });
 
-        // If only one device, auto-select and fetch its state/schedule
         if (devices.length === 1) {
             currentDeviceId = devices[0].id;
             select.value = currentDeviceId;
             document.getElementById('status').innerText = 'Fetching state...';
-            startPolling(); // Start polling immediately
+            startPolling();
             loadSchedule();
         }
 
-        // Add event listener for manual selection (if more than one device)
         select.addEventListener('change', () => {
             currentDeviceId = getSelectedDeviceId();
             if (!currentDeviceId) {
                 document.getElementById('status').innerText = 'Please select a device.';
-                stopPolling(); // Stop polling if no device is selected
+                stopPolling();
                 return;
             }
             document.getElementById('status').innerText = 'Fetching state...';
-            startPolling(); // Start/restart polling for the selected device
+            startPolling();
             loadSchedule();
         });
     } catch (err) {
@@ -225,17 +208,15 @@ async function loadDevices() {
     }
 }
 
-// Start polling for device state
+// --- Polling Logic ---
 function startPolling() {
     if (pollIntervalId) {
-        clearInterval(pollIntervalId); // Clear any existing interval
+        clearInterval(pollIntervalId);
     }
-    // Poll every 3 seconds (adjust to match ESP's polling or your needs)
-    pollIntervalId = setInterval(fetchDeviceState, 3000); 
-    fetchDeviceState(); // Fetch immediately on start
+    pollIntervalId = setInterval(fetchDeviceState, 3000);
+    fetchDeviceState();
 }
 
-// Stop polling for device state
 function stopPolling() {
     if (pollIntervalId) {
         clearInterval(pollIntervalId);
@@ -243,9 +224,101 @@ function stopPolling() {
     }
 }
 
+// --- Growatt Integration Functions (NEW) ---
 
+async function loadIntegrations() {
+    const integrationList = document.getElementById('integrationList');
+    integrationList.innerHTML = '<li>Loading integrations...</li>';
+    const { ok, data: integrations, status } = await fetchData('/espcontrol/api/integrations');
+
+    if (!ok) {
+        integrationList.innerHTML = `<li>Error loading integrations: ${integrations.error || status}</li>`;
+        console.error('[INTEGRATIONS] Error loading integrations:', status, integrations.error);
+        return;
+    }
+
+    integrationList.innerHTML = ''; // Clear loading message
+
+    if (integrations.length === 0) {
+        integrationList.innerHTML = '<li>No integrations added yet.</li>';
+        return;
+    }
+
+    integrations.forEach(integration => {
+        const li = document.createElement('li');
+        li.textContent = `${integration.name} (${integration.integration_type})`;
+
+        if (integration.integration_type === 'Growatt') {
+            const fetchDataButton = document.createElement('button');
+            fetchDataButton.textContent = 'Fetch Growatt Data';
+            fetchDataButton.style.marginLeft = '10px';
+            fetchDataButton.onclick = async () => {
+                const growattDataDisplay = document.getElementById('growattDataDisplay');
+                const growattRawData = document.getElementById('growattRawData');
+                growattRawData.textContent = 'Fetching data...';
+                growattDataDisplay.style.display = 'block';
+
+                const { ok: growattOk, data: growattData, status: growattStatus } = await fetchData(`/espcontrol/api/integrations/growatt/${integration.id}/data`);
+
+                if (growattOk) {
+                    growattRawData.textContent = JSON.stringify(growattData, null, 2);
+                    console.log('[GROWATT] Data fetched successfully:', growattData);
+                } else {
+                    growattRawData.textContent = `Error fetching Growatt data: ${growattData.error || growattStatus}`;
+                    console.error('[GROWATT] Error fetching data:', growattStatus, growattData.error);
+                }
+            };
+            li.appendChild(fetchDataButton);
+        }
+        integrationList.appendChild(li);
+    });
+}
+
+// Handle form submission for adding new Growatt integration
+document.addEventListener('DOMContentLoaded', () => {
+    const addGrowattIntegrationForm = document.getElementById('addGrowattIntegrationForm');
+    if (addGrowattIntegrationForm) {
+        addGrowattIntegrationForm.addEventListener('submit', async (event) => {
+            event.preventDefault(); // Prevent default form submission
+
+            const name = document.getElementById('growattIntegrationName').value;
+            const username = document.getElementById('growattUsername').value;
+            const password = document.getElementById('growattPassword').value;
+            const server = document.getElementById('growattServer').value;
+            const plantId = document.getElementById('growattPlantId').value;
+            const deviceSerialsInput = document.getElementById('growattDeviceSerials').value;
+            const deviceSerialNumbers = deviceSerialsInput.split(',').map(s => s.trim()).filter(s => s); // Split by comma, trim, filter empty
+
+            const integrationData = {
+                integration_type: 'Growatt', // Fixed type
+                name: name,
+                settings: {
+                    username: username,
+                    password: password,
+                    server: server,
+                    plantId: plantId,
+                    deviceSerialNumbers: deviceSerialNumbers // Pass as array
+                }
+            };
+
+            const { ok, data, status } = await fetchData('/espcontrol/api/integrations', 'POST', integrationData);
+
+            if (ok) {
+                alert(`Integration "${name}" added successfully!`);
+                addGrowattIntegrationForm.reset(); // Clear form
+                loadIntegrations(); // Reload list
+            } else {
+                alert(`Failed to add integration: ${data.error || status}`);
+                console.error('[INTEGRATIONS] Failed to add integration:', status, data.error);
+            }
+        });
+    }
+});
+
+
+// --- Initial Page Load ---
 window.onload = () => {
-    console.log('[CLIENT] Page loaded, loading devices...');
+    console.log('[CLIENT] Page loaded, loading devices and integrations...');
     loadDevices();
-    // Polling will start after a device is selected by loadDevices()
+    loadIntegrations(); // Load integrations when the page loads
 };
