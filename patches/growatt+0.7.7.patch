@@ -1,0 +1,13 @@
+diff --git a/node_modules/growatt/lib/growatt.js b/node_modules/growatt/lib/growatt.js
+index a63243f..fca8122 100644
+--- a/node_modules/growatt/lib/growatt.js
++++ b/node_modules/growatt/lib/growatt.js
+@@ -29,7 +29,7 @@ const QUEUE = require('./queue');
+ const GROWATTTYPE = require('./growatttype');
+ const PARSEIN = require('./parsein');
+ 
+-const server = 'https://server.growatt.com';
++const server = 'https://server-us.growatt.com';
+ const index = 'index';
+ const indexbC = 'indexbC';
+ const timeout = 50000;
