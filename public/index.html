@@ -1,78 +1,89 @@
-<!-- index.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP Control Panel</title>
-    <link rel="stylesheet" href="style.css"> </head>
+    <title>ESP8266 Control Panel</title>
+    <link rel="stylesheet" href="/espcontrol/styles.css">
+</head>
 <body>
-    <div class="container">
-        <h1>ESP Control Panel</h1>
-        <div class="header-links">
-            <a href="/espcontrol/logout">Logout</a>
-        </div>
+    <h1>ESP8266 GPIO Control TEST</h1>
 
-        <div class="section">
-            <h2>Your Devices</h2>
-            <ul id="deviceList">
-                <li>Loading devices...</li>
-            </ul>
-        </div>
+    <button onclick="location.href='/espcontrol/logout'" style="float: right; margin-top: -40px;">🚪 Logout</button>
 
-        <div class="section" id="scheduleSection" style="display:none;">
-            <h2>Manage Schedule for <span id="scheduleDeviceName"></span></h2>
-            <div class="timezone-select">
-                <label for="deviceTimezone">Device Timezone:</label>
-                <select id="deviceTimezone"></select>
-            </div>
-            <div id="scheduleContainer">
-                </div>
-            <button onclick="addScheduleEntry()">Add Schedule Entry</button>
-            <button onclick="saveSchedule()">Save Schedule</button>
-            <button onclick="cancelScheduleEdit()">Cancel</button>
-        </div>
+    <label>
+        <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
+    </label>
+    <div id="status">Loading...</div>
 
-        <div class="section">
-            <h2>Integrations</h2>
-            <div class="integration-form-container">
-                <h3>Add New Growatt Integration</h3>
-                <form id="addGrowattIntegrationForm">
-                    <label for="growattIntegrationName">Integration Name:</label>
-                    <input type="text" id="growattIntegrationName" name="name" required><br><br>
+    <div id="schedule">
+        <h2>Schedule Settings</h2>
 
-                    <label for="growattUsername">Growatt Username:</label>
-                    <input type="text" id="growattUsername" name="username" required><br><br>
+        <label for="deviceSelect">Select Device:</label>
+        <select id="deviceSelect" onchange="loadSchedule()">
+            <option value="">-- Choose Device --</option>
+        </select>
 
-                    <label for="growattPassword">Growatt Password:</label>
-                    <password type="password" id="growattPassword" name="password" required><br><br>
+        <label for="timezone">Timezone:</label>
+        <select id="timezone">
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">America/New_York</option>
+            <option value="America/Cancun">America/Cancun</option>
+            <option value="America/Chicago">America/Chicago</option>
+            <option value="America/Los_Angeles">America/Los_Angeles</option>
+        </select>
 
-                    <label for="growattServer">Growatt Server URL:</label>
-                    <input type="text" id="growattServer" name="server" value="https://server-us.growatt.com/" required><br><br>
+        <div id="events"></div>
 
-                    <label for="growattPlantId">Growatt Plant ID:</label>
-                    <input type="text" id="growattPlantId" name="plantId" placeholder="e.g., 4466" required><br><br>
+        <button onclick="addEvent()">+ Add Event</button>
+        <button onclick="saveSchedule()">💾 Save Schedule</button>
 
-                    <label for="growattDeviceSerials">Device Serial Numbers (comma-separated):</label>
-                    <input type="text" id="growattDeviceSerials" name="deviceSerialNumbers" placeholder="e.g., UKDFBHG0GX,XSK0CKS058" required><br><br>
-
-                    <button type="submit">Add Growatt Integration</button>
-                </form>
-            </div>
-
-            <div class="existing-integrations">
-                <h3>Your Existing Integrations</h3>
-                <ul id="integrationList">
-                    <li>Loading integrations...</li>
-                </ul>
-                <div id="growattDataDisplay" style="display:none; margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px;">
-                    <h4>Growatt Data:</h4>
-                    <pre id="growattRawData"></pre>
-                </div>
-            </div>
-        </div>
-
+        <div id="saveStatus" style="margin-top: 10px;"></div>
     </div>
 
-    <script src="script.js"></script> <script src="timezones.js"></script> </body>
+    <div class="section">
+        <h2>Integrations</h2>
+        <div class="integration-form-container">
+            <h3>Add New Growatt Integration</h3>
+            <form id="addGrowattIntegrationForm">
+                <label for="growattIntegrationName">Integration Name:</label>
+                <input type="text" id="growattIntegrationName" name="name" required><br><br>
+
+                <label for="growattUsername">Growatt Username:</label>
+                <input type="text" id="growattUsername" name="username" required><br><br>
+
+                <label for="growattPassword">Growatt Password:</label>
+                <input type="password" id="growattPassword" name="password" required><br><br>
+
+                <label for="growattServer">Growatt Server URL:</label>
+                <input type="text" id="growattServer" name="server" value="https://server-us.growatt.com/" required><br><br>
+
+                <label for="growattPlantId">Growatt Plant ID:</label>
+                <input type="text" id="growattPlantId" name="plantId" placeholder="e.g., 4466"><br><br>
+
+                <label for="growattDeviceSerials">Device Serial Numbers (comma-separated):</label>
+                <input type="text" id="growattDeviceSerials" name="deviceSerialNumbers" placeholder="e.g., UKDFBHG0GX,XSK0CKS058"><br><br>
+
+                <button type="submit">Add Growatt Integration</button>
+            </form>
+        </div>
+
+        <section id="growattSection">
+          <h3>Link Growatt Account</h3>
+          <input type="email" id="growattEmail" placeholder="Growatt Email">
+          <input type="password" id="growattPassword" placeholder="Growatt Password">
+          <button onclick="loginGrowatt()">Login</button>
+
+          <div id="inverterList"></div>
+        </section>
+
+
+        <div class="existing-integrations">
+            <h3>Your Existing Integrations</h3>
+            <ul id="integrationList">
+                <li>Loading integrations...</li>
+            </ul>
+            </div>
+    </div>
+    <script src="/espcontrol/script.js"></script>
+</body>
 </html>

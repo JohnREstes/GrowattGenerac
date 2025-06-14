@@ -1,4 +1,4 @@
-//index.js
+// index.js
 
 require('dotenv').config();
 const express = require('express');
@@ -10,6 +10,7 @@ const db = require('./db/database');
 const cron = require('node-cron');
 const moment = require('moment');
 const momentTz = require('moment-timezone');
+const jwt = require('jsonwebtoken'); // <--- Make sure this is here
 
 const app = express();
 const server = http.createServer(app);
@@ -26,6 +27,30 @@ const deviceTimezones = {};
 
 // ✅ NEW: Import the Growatt Integration module
 const GrowattIntegration = require('./integrations/growatt');
+
+
+// Secret key for JWTs (use a strong, environment variable in production)
+const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_jwt_key'; // Make sure this is defined
+
+// Middleware to authenticate JWT token <--- MOVE THIS ENTIRE FUNCTION HERE
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (token == null) {
+        return res.sendStatus(401); // No token
+    }
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) {
+            console.warn('[AUTH] JWT verification failed:', err.message);
+            return res.sendStatus(403); // Token invalid or expired
+        }
+        req.user = user; // Attach user payload to request
+        next(); // Proceed to the next middleware/route handler
+    });
+}
+
 
 // Body + session middleware
 app.use(express.urlencoded({ extended: true }));
@@ -377,11 +402,24 @@ app.get('/espcontrol/api/integrations/growatt/:integrationId/data', isAuthentica
                     return res.status(404).send('Growatt integration not found or not authorized.');
                 }
 
-                const settings = JSON.parse(row.settings_json);
-                const growatt = new GrowattIntegration(settings); // Instantiate Growatt client
+                // --- FIX 1: Ensure settings is an object and pass all required arguments to constructor ---
+                let settings = {};
+                try {
+                    // Safely parse settings_json, defaulting to an empty JSON object if null/undefined
+                    settings = JSON.parse(row.settings_json || '{}');
+                } catch (parseError) {
+                    console.error(`[GROWATT] Error parsing settings_json for integration ${integrationId}:`, parseError.message);
+                    return res.status(500).json({ error: 'Invalid Growatt integration settings configuration.' });
+                }
+
+                // Instantiate Growatt client with all required arguments
+                // Pass 'db' and 'integrationId' from the current context
+                const growattIntegrationInstance = new GrowattIntegration(db, integrationId, settings);
+                // --- END FIX 1 ---
 
                 try {
-                    const data = await growatt.getRealtimeData(); // Fetch data from Growatt
+                    // --- FIX 2: Call the correct method (fetchData) ---
+                    const data = await growattIntegrationInstance.fetchData(); // Call fetchData instead of getRealtimeData
                     res.json(data);
                 } catch (growattErr) {
                     console.error('[GROWATT] Error fetching data from Growatt:', growattErr.message);
@@ -393,6 +431,52 @@ app.get('/espcontrol/api/integrations/growatt/:integrationId/data', isAuthentica
         console.error('[GROWATT] General error in Growatt data endpoint:', generalErr.message);
         res.status(500).send('An unexpected error occurred.');
     }
+});
+
+// Route to get a specific integration by ID for the logged-in user
+app.get('/espcontrol/api/integrations/:id', isAuthenticated, (req, res) => {
+    const integrationId = req.params.id;
+    const userId = req.session.userId; // Get user ID from session
+
+    db.get('SELECT * FROM integrations WHERE id = ? AND user_id = ?', [integrationId, userId], (err, integration) => {
+        if (err) {
+            console.error('[DB] Error fetching integration by ID:', err.message);
+            return res.status(500).json({ error: 'Database error fetching integration' });
+        }
+        if (!integration) {
+            return res.status(404).json({ error: 'Integration not found or not owned by user' });
+        }
+        // Parse settings JSON string back into an object
+        // Corrected from previous review: ensures settings_json is parsed
+        if (integration.settings_json) {
+            integration.settings = JSON.parse(integration.settings_json);
+        } else {
+            integration.settings = {}; // Default to empty object if no settings_json
+        }
+        res.json(integration);
+    });
+});
+
+app.post('/espcontrol/growatt/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const loginRes = await growatt.login(email, password);
+    const token = loginRes.data.userId;
+    req.session.growatt = { token, email, password };
+
+    const plants = await growatt.getPlants(token);
+    const inverters = [];
+
+    for (const plant of plants) {
+      const invs = await growatt.getInverters(token, plant.plantId);
+      inverters.push(...invs.map(i => ({ ...i, plantId: plant.plantId, plantName: plant.plantName })));
+    }
+
+    res.json({ plants, inverters });
+  } catch (err) {
+    console.error('[GROWATT] Login failed:', err);
+    res.status(401).send('Growatt login failed');
+  }
 });
 
 

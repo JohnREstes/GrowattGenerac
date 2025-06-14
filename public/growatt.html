@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Growatt Battery Monitor</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 1rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #f2f2f2; }
+    #status { margin-bottom: 1rem; font-weight: bold; }
+    #loginForm { margin-bottom: 1rem; }
+    input { margin-right: 8px; padding: 5px; }
+  </style>
+</head>
+<body>
+  <h1>Growatt Inverter Battery Data</h1>
+
+  <form id="loginForm">
+    <input type="text" id="username" placeholder="Username" required />
+    <input type="password" id="password" placeholder="Password" required />
+    <button type="submit">Login</button>
+  </form>
+
+  <div id="status"></div>
+
+  <table id="batteryTable" style="display: none;">
+    <thead>
+      <tr>
+        <th>Plant Name</th>
+        <th>Inverter ID</th>
+        <th>Battery Voltage (vBat)</th>
+        <th>Battery %</th>
+        <th>AC Input Power (W)</th>
+        <th>AC Output Power (W)</th>
+        <th>Solar Panel Power (W)</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let refreshInterval = null;
+
+    async function fetchBatteryData() {
+      try {
+        const response = await fetch('/api/growatt/data');
+        const data = await response.json();
+
+        if (!data.success) {
+          document.getElementById('status').textContent = 'Error: ' + data.error;
+          return;
+        }
+
+        document.getElementById('status').textContent = data.message + ' (Refreshed: ' + new Date().toLocaleTimeString() + ')';
+        const tbody = document.querySelector('#batteryTable tbody');
+        tbody.innerHTML = '';
+        document.getElementById('batteryTable').style.display = '';
+
+        data.inverters.forEach(inv => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${inv.plantName}</td>
+            <td>${inv.inverterId}</td>
+            <td>${inv.batteryVoltage}</td>
+            <td>${inv.batteryPercentage}</td>
+            <td>${inv.acInputPower}</td>
+            <td>${inv.acOutputPower}</td>
+            <td>${inv.solarPanelPower}</td>
+          `;
+          tbody.appendChild(row);
+        });
+
+      } catch (err) {
+        document.getElementById('status').textContent = 'Request failed: ' + err.message;
+      }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      document.getElementById('status').textContent = 'Logging in...';
+
+      try {
+        const response = await fetch('/api/growatt/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          document.getElementById('status').textContent = 'Error: ' + data.error;
+          return;
+        }
+
+        document.getElementById('status').textContent = data.message;
+        document.getElementById('batteryTable').style.display = 'block';
+
+        await fetchBatteryData();
+
+        // Start refresh every 15 seconds
+        if (refreshInterval) clearInterval(refreshInterval);
+        refreshInterval = setInterval(fetchBatteryData, 15000);
+
+      } catch (err) {
+        document.getElementById('status').textContent = 'Login failed: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>

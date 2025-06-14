@@ -18,7 +18,6 @@ async function fetchData(url, method = 'GET', body = null) {
         options.body = JSON.stringify(body);
     }
     const response = await fetch(url, options);
-    // Attempt to parse JSON, but gracefully handle non-JSON responses (like plain text errors)
     const text = await response.text();
     try {
         const json = JSON.parse(text);
@@ -224,7 +223,155 @@ function stopPolling() {
     }
 }
 
-// --- Growatt Integration Functions (NEW) ---
+// --- Growatt Integration Functions ---
+
+// Function to render details and update controls for a Growatt integration
+function renderGrowattIntegrationDetails(integration, containerElement) {
+    containerElement.innerHTML = `
+        <p><strong>Name:</strong> ${integration.name}</p>
+        <p><strong>Type:</strong> ${integration.integration_type}</p>
+        <p><strong>Server:</strong> ${integration.settings.server || 'N/A'}</p>
+        <p><strong>Saved Plant ID:</strong> <span id="currentPlantId-${integration.id}">${integration.settings.plantId || 'None Set'}</span></p>
+        <p><strong>Saved Device Serials:</strong> <span id="currentDeviceSerials-${integration.id}">${(integration.settings.deviceSerialNumbers && integration.settings.deviceSerialNumbers.length > 0) ? integration.settings.deviceSerialNumbers.join(', ') : 'None Set'}</span></p>
+
+        <button class="fetch-growatt-data-btn" data-integration-id="${integration.id}">Fetch Growatt Data</button>
+        <div id="growattDataDisplay-${integration.id}" style="display:none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 5px;">
+            <h4>Raw Growatt Data:</h4>
+            <pre id="growattRawData-${integration.id}" style="max-height: 200px; overflow-y: scroll; background-color: #f8f8f8; padding: 10px; border: 1px solid #ddd;"></pre>
+            
+            <div style="margin-top: 15px;">
+                <h4>Discovered Growatt Plants & Devices:</h4>
+                <ul id="discoveredPlants-${integration.id}"></ul>
+            </div>
+
+            <div style="margin-top: 15px;">
+                <h4>Update Growatt Settings:</h4>
+                <label for="updatePlantId-${integration.id}">New Plant ID:</label>
+                <select id="updatePlantId-${integration.id}" data-integration-id="${integration.id}"></select><br><br>
+
+                <label for="updateDeviceSerials-${integration.id}">New Device Serials (comma-separated):</label>
+                <input type="text" id="updateDeviceSerials-${integration.id}" value="${(integration.settings.deviceSerialNumbers && integration.settings.deviceSerialNumbers.length > 0) ? integration.settings.deviceSerialNumbers.join(', ') : ''}" style="width: 100%; max-width: 300px;"><br><br>
+                
+                <button class="update-growatt-settings-btn" data-integration-id="${integration.id}">Update Settings</button>
+            </div>
+            <p id="updateStatus-${integration.id}" style="margin-top: 5px; font-size: 0.9em;"></p>
+        </div>
+    `;
+
+    // Add event listener for Fetch Growatt Data button
+    containerElement.querySelector(`.fetch-growatt-data-btn`).onclick = async () => {
+        await fetchGrowattData(integration.id);
+    };
+
+    // Add event listener for Update Settings button
+    containerElement.querySelector(`.update-growatt-settings-btn`).onclick = async () => {
+        const newPlantId = containerElement.querySelector(`#updatePlantId-${integration.id}`).value;
+        const newDeviceSerialsInput = containerElement.querySelector(`#updateDeviceSerials-${integration.id}`).value;
+        const newDeviceSerialNumbers = newDeviceSerialsInput.split(',').map(s => s.trim()).filter(s => s);
+
+        const updatedSettings = {
+            ...integration.settings, // Keep existing settings
+            plantId: newPlantId,
+            deviceSerialNumbers: newDeviceSerialNumbers
+        };
+
+        const updateStatusElement = containerElement.querySelector(`#updateStatus-${integration.id}`);
+        updateStatusElement.textContent = 'Updating...';
+        updateStatusElement.style.color = 'gray';
+
+        const { ok, data, status } = await fetchData(`/espcontrol/api/integrations/${integration.id}`, 'PUT', {
+            integration_type: integration.integration_type,
+            name: integration.name,
+            settings: updatedSettings
+        });
+
+        if (ok) {
+            updateStatusElement.textContent = 'Settings updated successfully!';
+            updateStatusElement.style.color = 'green';
+            // Update displayed "Saved" values immediately
+            document.getElementById(`currentPlantId-${integration.id}`).textContent = newPlantId || 'None Set';
+            document.getElementById(`currentDeviceSerials-${integration.id}`).textContent = newDeviceSerialNumbers.join(', ') || 'None Set';
+            // Optionally, reload all integrations to refresh the list entirely
+            // loadIntegrations();
+        } else {
+            updateStatusElement.textContent = `Failed to update settings: ${data.error || status}`;
+            updateStatusElement.style.color = 'red';
+            console.error('[GROWATT] Error updating settings:', status, data.error);
+        }
+        setTimeout(() => updateStatusElement.textContent = '', 3000);
+    };
+}
+
+
+async function fetchGrowattData(integrationId) {
+    const growattDataDisplay = document.getElementById(`growattDataDisplay-${integrationId}`);
+    const growattRawData = document.getElementById(`growattRawData-${integrationId}`);
+    const discoveredPlantsUl = document.getElementById(`discoveredPlants-${integrationId}`);
+    const updatePlantIdSelect = document.getElementById(`updatePlantId-${integrationId}`);
+
+    growattRawData.textContent = 'Fetching data...';
+    discoveredPlantsUl.innerHTML = '';
+    updatePlantIdSelect.innerHTML = '<option value="">-- Select Plant ID --</option>'; // Clear and add default
+    growattDataDisplay.style.display = 'block';
+
+    const { ok: growattOk, data: growattResponseData, status: growattStatus } = await fetchData(`/espcontrol/api/integrations/growatt/${integrationId}/data`);
+
+    if (growattOk) {
+        growattRawData.textContent = JSON.stringify(growattResponseData, null, 2);
+        console.log('[GROWATT] Data fetched successfully:', growattResponseData);
+
+        // Populate Discovered Plants & Devices section
+        // Assuming growattResponseData.allRawPlantData is the key where the full data from growatt.getAllPlantData({}) resides
+        const rawPlantsFromBackend = growattResponseData.allRawPlantData;
+
+        if (typeof rawPlantsFromBackend === 'object' && rawPlantsFromBackend !== null && !Array.isArray(rawPlantsFromBackend)) {
+            for (const plantId in rawPlantsFromBackend) {
+                if (rawPlantsFromBackend.hasOwnProperty(plantId)) {
+                    const plant = rawPlantsFromBackend[plantId];
+                    const plantName = plant.plantName || `Plant ${plantId}`; // Growatt often has a plantName
+                    const devices = plant.devices || {};
+
+                    const plantLi = document.createElement('li');
+                    plantLi.innerHTML = `<strong>Plant ID: ${plantId} (${plantName})</strong>`;
+                    
+                    const devicesUl = document.createElement('ul');
+                    for (const deviceSerial in devices) {
+                        if (devices.hasOwnProperty(deviceSerial)) {
+                            const deviceLi = document.createElement('li');
+                            deviceLi.textContent = `Device Serial: ${deviceSerial}`;
+                            devicesUl.appendChild(deviceLi);
+                        }
+                    }
+                    if (Object.keys(devices).length === 0) {
+                        devicesUl.innerHTML = '<li>No devices found for this plant.</li>';
+                    }
+                    plantLi.appendChild(devicesUl);
+                    discoveredPlantsUl.appendChild(plantLi);
+
+                    // Add to the update Plant ID dropdown
+                    const option = document.createElement('option');
+                    option.value = plantId;
+                    option.textContent = `${plantName} (ID: ${plantId})`;
+                    updatePlantIdSelect.appendChild(option);
+                }
+            }
+            // Set current plantId in dropdown if it was previously set
+            // The original integration object (passed to renderGrowattIntegrationDetails) holds the saved plantId
+            // So we need to get the integration's current settings.plantId
+            const integrationItem = await fetchData(`/espcontrol/api/integrations/${integrationId}`);
+            if (integrationItem.ok && integrationItem.data.settings && integrationItem.data.settings.plantId) {
+                updatePlantIdSelect.value = integrationItem.data.settings.plantId;
+            }
+        } else {
+             discoveredPlantsUl.innerHTML = '<li>Could not discover plants/devices. Raw data might be malformed or empty.</li>';
+        }
+
+    } else {
+        growattRawData.textContent = `Error fetching Growatt data: ${growattResponseData.error || growattStatus}`;
+        console.error('[GROWATT] Error fetching data:', growattStatus, growattResponseData.error);
+    }
+}
+
 
 async function loadIntegrations() {
     const integrationList = document.getElementById('integrationList');
@@ -246,29 +393,16 @@ async function loadIntegrations() {
 
     integrations.forEach(integration => {
         const li = document.createElement('li');
-        li.textContent = `${integration.name} (${integration.integration_type})`;
+        li.style.marginBottom = '20px';
+        li.style.border = '1px solid #ccc';
+        li.style.padding = '10px';
+        li.style.borderRadius = '5px';
 
         if (integration.integration_type === 'Growatt') {
-            const fetchDataButton = document.createElement('button');
-            fetchDataButton.textContent = 'Fetch Growatt Data';
-            fetchDataButton.style.marginLeft = '10px';
-            fetchDataButton.onclick = async () => {
-                const growattDataDisplay = document.getElementById('growattDataDisplay');
-                const growattRawData = document.getElementById('growattRawData');
-                growattRawData.textContent = 'Fetching data...';
-                growattDataDisplay.style.display = 'block';
-
-                const { ok: growattOk, data: growattData, status: growattStatus } = await fetchData(`/espcontrol/api/integrations/growatt/${integration.id}/data`);
-
-                if (growattOk) {
-                    growattRawData.textContent = JSON.stringify(growattData, null, 2);
-                    console.log('[GROWATT] Data fetched successfully:', growattData);
-                } else {
-                    growattRawData.textContent = `Error fetching Growatt data: ${growattData.error || growattStatus}`;
-                    console.error('[GROWATT] Error fetching data:', growattStatus, growattData.error);
-                }
-            };
-            li.appendChild(fetchDataButton);
+            renderGrowattIntegrationDetails(integration, li);
+        } else {
+            li.textContent = `${integration.name} (${integration.integration_type})`;
+            // You can add more details for other integration types here
         }
         integrationList.appendChild(li);
     });
@@ -285,9 +419,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const username = document.getElementById('growattUsername').value;
             const password = document.getElementById('growattPassword').value;
             const server = document.getElementById('growattServer').value;
+            // These fields are now optional, can be empty strings
             const plantId = document.getElementById('growattPlantId').value;
             const deviceSerialsInput = document.getElementById('growattDeviceSerials').value;
-            const deviceSerialNumbers = deviceSerialsInput.split(',').map(s => s.trim()).filter(s => s); // Split by comma, trim, filter empty
+            // Only split and filter if the input is not empty
+            const deviceSerialNumbers = deviceSerialsInput ? deviceSerialsInput.split(',').map(s => s.trim()).filter(s => s) : [];
 
             const integrationData = {
                 integration_type: 'Growatt', // Fixed type
@@ -297,7 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     password: password,
                     server: server,
                     plantId: plantId,
-                    deviceSerialNumbers: deviceSerialNumbers // Pass as array
+                    deviceSerialNumbers: deviceSerialNumbers
                 }
             };
 
@@ -306,7 +442,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (ok) {
                 alert(`Integration "${name}" added successfully!`);
                 addGrowattIntegrationForm.reset(); // Clear form
-                loadIntegrations(); // Reload list
+                loadIntegrations(); // Reload list to show new integration
             } else {
                 alert(`Failed to add integration: ${data.error || status}`);
                 console.error('[INTEGRATIONS] Failed to add integration:', status, data.error);
