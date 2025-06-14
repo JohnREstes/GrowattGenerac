@@ -62,20 +62,44 @@ class GrowattIntegration {
 
         try {
             // Get ALL plant data accessible by the logged-in user
-            // This is crucial for dynamic discovery, even if specific plantId/devices are set.
             const allPlantData = await this.growatt.getAllPlantData({});
             console.log(`[GrowattIntegration-${this.integrationId}] Successfully fetched all plant data from Growatt.`);
 
             let relevantData = {};
-            // Include raw allPlantData for frontend discovery
-            relevantData.allRawPlantData = allPlantData; 
+            // Include raw allPlantData for full discovery
+            relevantData.allRawPlantData = allPlantData;
 
-            // If a specific plantId is configured for this integration, filter and return its data
+            // --- NEW LOGIC: Process all inverters for summary ---
+            const inverterSummaries = [];
+            for (const pid in allPlantData) {
+                const plant = allPlantData[pid];
+                const devices = plant.devices || {};
+
+                for (const deviceId in devices) {
+                    const status = devices[deviceId]?.statusData || {};
+
+                    inverterSummaries.push({
+                        plantName: plant.plantName,
+                        inverterId: deviceId,
+                        batteryVoltage: status.vBat || 'N/A',
+                        batteryPercentage: status.capacity || 'N/A',
+                        acInputPower: status.gridPower || 'N/A',
+                        acOutputPower: status.loadPower || 'N/A',
+                        solarPanelPower: status.panelPower || 'N/A',
+                    });
+                }
+            }
+            relevantData.inverters = inverterSummaries; // Add the new structured summaries
+            // --- END NEW LOGIC ---
+
+            // Existing logic: If a specific plantId is configured, still provide its data under 'plantData'
             if (this.settings.plantId && allPlantData[this.settings.plantId]) {
                 const targetPlant = allPlantData[this.settings.plantId];
-                relevantData.plantData = targetPlant; // Data for the specified plant
+                relevantData.plantData = targetPlant; // Data for the specifically configured plant
 
-                // If specific device serial numbers are configured, filter device data
+                // Original filtering for deviceSerialNumbers can remain if you want to subset
+                // relevantData.plantData.devices for a *specific* plant's devices.
+                // However, the `inverters` array already gives you all devices across all plants.
                 if (this.settings.deviceSerialNumbers && this.settings.deviceSerialNumbers.length > 0) {
                     const filteredDevices = {};
                     for (const serial of this.settings.deviceSerialNumbers) {
@@ -85,18 +109,16 @@ class GrowattIntegration {
                             console.warn(`[GrowattIntegration-${this.integrationId}] Configured device serial ${serial} not found for plant ${this.settings.plantId}.`);
                         }
                     }
-                    relevantData.plantData.devices = filteredDevices; // Replace devices with filtered ones
+                    relevantData.plantData.devices = filteredDevices;
                 }
             } else if (this.settings.plantId) {
                 console.warn(`[GrowattIntegration-${this.integrationId}] Configured Plant ID ${this.settings.plantId} not found in Growatt account.`);
-                // If a plantId was specified but not found, relevantData.plantData will be empty or not set for specific data.
             }
 
-            return relevantData; // Return the filtered data (or raw allPlantData for discovery)
+            return relevantData; // Return all data, including the new `inverters` summary
         } catch (error) {
             console.error(`[GrowattIntegration-${this.integrationId}] Error fetching data from Growatt:`, error);
-            // Invalidate login status if an error occurs during data fetching, forcing re-login next time
-            this.isLoggedIn = false; 
+            this.isLoggedIn = false;
             throw new Error(`Failed to fetch data from Growatt: ${error.message}`);
         }
     }
