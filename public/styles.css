@@ -1,7 +1,14 @@
 body {
   font-family: sans-serif;
   text-align: center;
-  padding-top: 50px;
+  padding: 20px; /* Adjusted padding */
+  background-color: #f4f4f4; /* Light background */
+  color: #333;
+}
+
+h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
 }
 
 .toggle {
@@ -12,6 +19,8 @@ body {
   border-radius: 30px;
   position: relative;
   cursor: pointer;
+  vertical-align: middle; /* Align with text */
+  margin-right: 10px;
 }
 .toggle:checked {
   background: #4caf50;
@@ -26,6 +35,7 @@ body {
   top: 2px;
   left: 2px;
   transition: 0.3s;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 .toggle:checked::before {
   transform: translateX(30px);
@@ -34,22 +44,221 @@ body {
 #status {
   margin-top: 20px;
   font-size: 1.2em;
+  font-weight: bold;
+  color: #555;
 }
 
-#schedule {
-  margin-top: 40px;
-  text-align: center;
+.section {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+  text-align: left; /* Align content inside sections to left */
 }
 
+.section h2, .section h3 {
+    color: #34495e;
+    margin-top: 0;
+    margin-bottom: 15px;
+    text-align: center; /* Keep section headings centered */
+}
+
+/* Schedule specific styles */
+#schedule label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+}
+#schedule select, #schedule input[type="time"] {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    margin-right: 10px;
+    margin-bottom: 10px;
+}
+#schedule button {
+    padding: 10px 15px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-right: 10px;
+}
+#schedule button:hover {
+    background-color: #0056b3;
+}
 #events {
-  margin-top: 10px;
+  margin-top: 15px;
 }
-
 .event-row {
-  margin: 5px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px; /* Space between elements */
+}
+.event-row button {
+    background-color: #dc3545;
+}
+.event-row button:hover {
+    background-color: #c82333;
+}
+#saveStatus {
+    margin-top: 10px;
+    font-weight: bold;
 }
 
-.event-row input,
-.event-row select {
-  margin-right: 10px;
+
+/* Integrations Section */
+#openGrowattModalBtn {
+    padding: 10px 20px;
+    background-color: #28a745;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    margin-bottom: 15px;
+}
+#openGrowattModalBtn:hover {
+    background-color: #218838;
+}
+
+.existing-integrations ul {
+    list-style: none;
+    padding: 0;
+}
+.integration-item {
+    border: 1px solid #eee;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 5px;
+    background-color: #f9f9f9;
+}
+.integration-item button {
+    margin-left: 10px; /* Space from text */
+    padding: 6px 10px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+}
+.integration-item button:hover {
+    background-color: #0056b3;
+}
+
+/* Modal Styles - Duplicated here for clarity, move to top if you prefer */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 100;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.6);
+    padding-top: 60px;
+}
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 25px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 600px;
+    border-radius: 8px;
+    position: relative;
+    box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+    animation-name: animatetop;
+    animation-duration: 0.4s;
+}
+@keyframes animatetop {
+    from {top: -300px; opacity: 0}
+    to {top: 0; opacity: 1}
+}
+.close-button {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+}
+.close-button:hover,
+.close-button:focus {
+    color: black;
+    text-decoration: none;
+    cursor: pointer;
+}
+.modal-content form label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    text-align: left;
+}
+.modal-content form input[type="text"],
+.modal-content form input[type="password"] {
+    width: calc(100% - 16px);
+    padding: 8px;
+    margin-bottom: 15px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+.modal-content form button {
+    padding: 10px 20px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+}
+.modal-content form button:hover {
+    background-color: #45a049;
+}
+
+/* Growatt Inverter Data Table Styles */
+#growattInverterDataTable {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    background-color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden; /* Ensures rounded corners apply to content */
+}
+#growattInverterDataTable th,
+#growattInverterDataTable td {
+    border: 1px solid #ddd; /* Lighter border */
+    padding: 10px; /* More padding */
+    text-align: center;
+}
+#growattInverterDataTable th {
+    background-color: #e9ecef; /* Slightly darker header */
+    color: #495057;
+    font-weight: bold;
+    text-transform: uppercase;
+    font-size: 0.9em;
+}
+#growattInverterDataTable tbody tr:nth-child(even) {
+    background-color: #f8f9fa; /* Zebra striping */
+}
+#growattInverterDataTable tbody tr:hover {
+    background-color: #e2e6ea; /* Hover effect */
+}
+#growattDataStatus {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 4px;
+    background-color: #e9ecef;
+    color: #495057;
+    font-weight: bold;
+    text-align: center;
+}
+
+/* For pre tags in details, ensure left alignment */
+#growattRawDetails pre {
+    text-align: left;
 }

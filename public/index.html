@@ -6,16 +6,19 @@
     <link rel="stylesheet" href="/espcontrol/styles.css">
 </head>
 <body>
-    <h1>ESP8266 GPIO Control TEST</h1>
+    <h1>ESP8266 GPIO Control Panel</h1>
 
     <button onclick="location.href='/espcontrol/logout'" style="float: right; margin-top: -40px;">🚪 Logout</button>
 
-    <label>
-        <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
-    </label>
-    <div id="status">Loading...</div>
+    <div class="section">
+        <h2>GPIO Control</h2>
+        <label>
+            <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
+        </label>
+        <div id="status">Loading...</div>
+    </div>
 
-    <div id="schedule">
+    <div id="schedule" class="section">
         <h2>Schedule Settings</h2>
 
         <label for="deviceSelect">Select Device:</label>
@@ -42,47 +45,61 @@
 
     <div class="section">
         <h2>Integrations</h2>
-        <div class="integration-form-container">
-            <h3>Add New Growatt Integration</h3>
-            <form id="addGrowattIntegrationForm">
-                <label for="growattIntegrationName">Integration Name:</label>
-                <input type="text" id="growattIntegrationName" name="name" required><br><br>
+        <button id="openGrowattModalBtn">Add New Growatt Integration</button>
 
-                <label for="growattUsername">Growatt Username:</label>
-                <input type="text" id="growattUsername" name="username" required><br><br>
+        <div id="growattIntegrationModal" class="modal">
+            <div class="modal-content">
+                <span class="close-button">&times;</span>
+                <h3>Add New Growatt Integration</h3>
+                <form id="growattIntegrationForm">
+                    <label for="growattIntegrationName">Integration Name:</label>
+                    <input type="text" id="growattIntegrationName" name="name" required>
 
-                <label for="growattPassword">Growatt Password:</label>
-                <input type="password" id="growattPassword" name="password" required><br><br>
+                    <label for="growattUsername">Growatt Username:</label>
+                    <input type="text" id="growattUsername" name="username" required>
 
-                <label for="growattServer">Growatt Server URL:</label>
-                <input type="text" id="growattServer" name="server" value="https://server-us.growatt.com/" required><br><br>
+                    <label for="growattPassword">Growatt Password:</label>
+                    <input type="password" id="growattPassword" name="password" required>
 
-                <label for="growattPlantId">Growatt Plant ID:</label>
-                <input type="text" id="growattPlantId" name="plantId" placeholder="e.g., 4466"><br><br>
+                    <label for="growattServer">Growatt Server URL:</label>
+                    <input type="text" id="growattServer" name="server" value="https://server-us.growatt.com/" required>
 
-                <label for="growattDeviceSerials">Device Serial Numbers (comma-separated):</label>
-                <input type="text" id="growattDeviceSerials" name="deviceSerialNumbers" placeholder="e.g., UKDFBHG0GX,XSK0CKS058"><br><br>
+                    <label for="growattPlantId">Growatt Plant ID (Optional - for specific plant focus):</label>
+                    <input type="text" id="growattPlantId" name="plantId" placeholder="e.g., 4466">
 
-                <button type="submit">Add Growatt Integration</button>
-            </form>
+                    <label for="growattDeviceSerials">Device Serial Numbers (Optional - comma-separated):</label>
+                    <input type="text" id="growattDeviceSerials" name="deviceSerialNumbers" placeholder="e.g., UKDFBHG0GX,XSK0CKS058">
+
+                    <button type="submit">Add Growatt Integration</button>
+                </form>
+            </div>
         </div>
-
-        <section id="growattSection">
-          <h3>Link Growatt Account</h3>
-          <input type="email" id="growattEmail" placeholder="Growatt Email">
-          <input type="password" id="growattPassword" placeholder="Growatt Password">
-          <button onclick="loginGrowatt()">Login</button>
-
-          <div id="inverterList"></div>
-        </section>
-
 
         <div class="existing-integrations">
             <h3>Your Existing Integrations</h3>
             <ul id="integrationList">
                 <li>Loading integrations...</li>
             </ul>
-            </div>
+        </div>
+
+        <div id="growattInverterData" class="section">
+            <h2>Growatt Inverter Data</h2>
+            <div id="growattDataStatus">Loading Growatt data...</div>
+            <table id="growattInverterDataTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Plant Name</th>
+                        <th>Inverter ID</th>
+                        <th>Battery Voltage (vBat)</th>
+                        <th>Battery %</th>
+                        <th>AC Input Power (W)</th>
+                        <th>AC Output Power (W)</th>
+                        <th>Solar Panel Power (W)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
     <script src="/espcontrol/script.js"></script>
 </body>

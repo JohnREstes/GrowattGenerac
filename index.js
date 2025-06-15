@@ -10,7 +10,7 @@ const db = require('./db/database');
 const cron = require('node-cron');
 const moment = require('moment');
 const momentTz = require('moment-timezone');
-const jwt = require('jsonwebtoken'); // <--- Make sure this is here
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +25,17 @@ const deviceStates = {};
 const loadedSchedules = {};
 const deviceTimezones = {};
 
+// Unauthenticated control check for ESP8266
+app.get('/espcontrol/device', (req, res) => {
+    const deviceId = req.query.deviceId;
+    if (!deviceId) {
+        return res.status(400).json({ error: 'Device ID is required' });
+    }
+
+    const state = deviceStates[deviceId] || 'OFF';
+    res.json({ deviceId, state });
+});
+
 // ✅ NEW: Import the Growatt Integration module
 const GrowattIntegration = require('./integrations/growatt');
 
@@ -32,7 +43,7 @@ const GrowattIntegration = require('./integrations/growatt');
 // Secret key for JWTs (use a strong, environment variable in production)
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_jwt_key'; // Make sure this is defined
 
-// Middleware to authenticate JWT token <--- MOVE THIS ENTIRE FUNCTION HERE
+// Middleware to authenticate JWT token
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -44,444 +55,356 @@ function authenticateToken(req, res, next) {
     jwt.verify(token, JWT_SECRET, (err, user) => {
         if (err) {
             console.warn('[AUTH] JWT verification failed:', err.message);
-            return res.sendStatus(403); // Token invalid or expired
+            return res.sendStatus(403); // Token no longer valid or expired
         }
-        req.user = user; // Attach user payload to request
-        next(); // Proceed to the next middleware/route handler
+        req.user = user;
+        next();
     });
 }
 
-
-// Body + session middleware
-app.use(express.urlencoded({ extended: true }));
-
+// Session middleware
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 2 * 60 * 60 * 1000 } // 2 hours
+    saveUninitialized: true,
+    cookie: { secure: false } // Set to true if using HTTPS
 }));
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-// Auth check function
-function isAuthenticated(req, res, next) {
-    if (req.session.loggedIn) return next();
-    console.log('[AUTH] Redirecting unauthenticated request to login');
-    res.redirect('/espcontrol/login.html');
-}
+// Serve static files from the 'public' directory
+app.use('/espcontrol', express.static(path.join(__dirname, 'public')));
 
-// Log all requests
-app.use((req, res, next) => {
-    console.log(`[REQ] ${req.method} ${req.url}`);
-    next();
-});
-
-// ✅ PUBLIC endpoint for ESP to poll GPIO state (UPDATED to match client and JSON)
-app.get('/espcontrol/control', (req, res) => {
-    const deviceId = req.query.deviceId;
-    if (!deviceId) {
-        return res.status(400).json({ error: 'Missing deviceId' });
-    }
-
-    const state = deviceStates[deviceId] || 'OFF';
-    console.log(`[GET] /espcontrol/control?deviceId=${deviceId} -> ${state}`);
-    res.json({ deviceId, state });
-});
-
-// ✅ New endpoint to handle device state toggling via HTTP POST
-app.post('/espcontrol/control', isAuthenticated, express.json(), (req, res) => {
-    const { deviceId, state } = req.body;
-    if (!deviceId || (state !== 'ON' && state !== 'OFF')) {
-        return res.status(400).json({ error: 'Invalid deviceId or state' });
-    }
-
-    deviceStates[deviceId] = state;
-    console.log(`[POST] /espcontrol/control -> Device ${deviceId} set to ${state}`);
-    res.json({ message: `Device ${deviceId} set to ${state}`, deviceId, state });
-});
-
-// Serve static files under /espcontrol, with session protection
-app.use('/espcontrol', (req, res, next) => {
-    if (
-        req.path === '/login.html' ||
-        req.path === '/login' ||
-        req.path === '/logout'
-    ) return next();
-    if (req.session.loggedIn) {
-        return express.static(path.join(__dirname, 'public'))(req, res, next);
-    }
-    console.log('[AUTH] Blocked static file request:', req.originalUrl);
-    res.redirect('/espcontrol/login.html');
-});
-
-// Login page
-app.get('/espcontrol/login.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
-// Login handler using SQLite
+// Public route for login
 app.post('/espcontrol/login', (req, res) => {
     const { username, password } = req.body;
-    console.log(`[LOGIN] Attempt with username: ${username}`);
-
-    const query = `SELECT * FROM users WHERE username = ?`;
-    db.get(query, [username], (err, user) => {
+    db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
         if (err) {
-            console.error('[LOGIN] DB error:', err);
-            return res.send('Server error. Please try again later.');
+            console.error('[DB] Login error:', err.message);
+            return res.status(500).send('Database error');
         }
-
         if (!user) {
-            console.log('[LOGIN] User not found');
-            return res.send('Invalid username or password. <a href="/espcontrol/login.html">Try again</a>.');
+            return res.status(400).send('Invalid username or password');
         }
 
-        bcrypt.compare(password, user.password, (err, result) => {
-            if (err) {
-                console.error('[LOGIN] Bcrypt error:', err);
-                return res.send('Server error. Please try again later.');
-            }
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).send('Invalid username or password');
+        }
 
-            if (result) {
-                console.log('[LOGIN] Success');
-                req.session.loggedIn = true;
-                req.session.userId = user.id;
-                res.redirect('/espcontrol/');
-            } else {
-                console.log('[LOGIN] Invalid password');
-                res.send('Invalid username or password. <a href="/espcontrol/login.html">Try again</a>.');
-            }
-        });
+        // Generate JWT token
+        const accessToken = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '1h' });
+        
+        req.session.userId = user.id; // Store user ID in session
+        req.session.isAuthenticated = true; // Set authentication status
+
+        res.json({ message: 'Login successful', token: accessToken });
     });
 });
 
-// Logout handler
+// Middleware to check if user is authenticated via session (for direct HTML access)
+function checkAuthentication(req, res, next) {
+    if (req.session.isAuthenticated) {
+        next();
+    } else {
+        res.redirect('/espcontrol/login.html');
+    }
+}
+
+// Serve the main control panel HTML after authentication
+app.get('/espcontrol/', checkAuthentication, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Logout route
 app.get('/espcontrol/logout', (req, res) => {
-    req.session.destroy(() => {
+    req.session.destroy(err => {
+        if (err) {
+            return res.status(500).send('Could not log out.');
+        }
         res.redirect('/espcontrol/login.html');
     });
 });
 
-// Redirect root to /espcontrol
-app.get('/', (req, res) => {
-    res.redirect('/espcontrol/');
-});
-
-// Protected index route
-app.get('/espcontrol/', isAuthenticated, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Get schedule for a specific device (UPDATED to fetch timezone)
-app.get('/espcontrol/api/schedule/:deviceId', isAuthenticated, (req, res) => {
-    const deviceId = req.params.deviceId;
-    db.get(`SELECT timezone FROM devices WHERE id = ?`, [deviceId], (err, row) => {
+// Device management API endpoints
+app.get('/espcontrol/api/devices', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    db.all('SELECT id, device_name FROM devices WHERE user_id = ?', [userId], (err, rows) => {
         if (err) {
-            console.error('[SCHEDULE] DB read timezone error:', err);
-            return res.status(500).send('Failed to load device timezone.');
+            console.error('[DB] Error fetching devices:', err.message);
+            return res.status(500).json({ error: 'Database error fetching devices' });
         }
-        const timezone = row ? row.timezone : 'UTC';
-
-        db.all(
-            `SELECT time, state FROM schedules WHERE device_id = ? ORDER BY time`,
-            [deviceId],
-            (err, rows) => {
-                if (err) {
-                    console.error('[SCHEDULE] DB read schedule error:', err);
-                    return res.status(500).send('Failed to load schedule.');
-                }
-                res.json({ events: rows, timezone: timezone });
-            }
-        );
+        res.json(rows);
     });
 });
 
-// Save schedule for a specific device (UPDATED to save timezone)
-app.post('/espcontrol/api/schedule/:deviceId', isAuthenticated, express.json(), (req, res) => {
-    const deviceId = req.params.deviceId;
-    const { events, timezone } = req.body;
+// GPIO control endpoint
+app.get('/espcontrol/control', authenticateToken, (req, res) => {
+    const deviceId = req.query.deviceId;
+    if (!deviceId) {
+        return res.status(400).send('Device ID is required');
+    }
+    const userId = req.user.id;
 
-    if (!Array.isArray(events)) {
-        return res.status(400).send('Invalid format');
+    db.get('SELECT device_name FROM devices WHERE id = ? AND user_id = ?', [deviceId, userId], (err, device) => {
+        if (err) {
+            console.error('[DB] Error fetching device for control:', err.message);
+            return res.status(500).json({ error: 'Database error fetching device' });
+        }
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found or not owned by user' });
+        }
+        const state = deviceStates[deviceId] || 'OFF';
+        res.json({ deviceId: deviceId, state: state });
+    });
+});
+
+app.post('/espcontrol/control', authenticateToken, (req, res) => {
+    const { deviceId, state } = req.body;
+    if (!deviceId || !['ON', 'OFF'].includes(state)) {
+        return res.status(400).send('Device ID and valid state (ON/OFF) are required');
+    }
+    const userId = req.user.id;
+
+    db.get('SELECT device_name FROM devices WHERE id = ? AND user_id = ?', [deviceId, userId], (err, device) => {
+        if (err) {
+            console.error('[DB] Error fetching device for control:', err.message);
+            return res.status(500).json({ error: 'Database error fetching device' });
+        }
+        if (!device) {
+            return res.status(404).json({ error: 'Device not found or not owned by user' });
+        }
+        deviceStates[deviceId] = state; // Update in-memory state
+        console.log(`[GPIO] Device ${deviceId} set to ${state}`);
+        res.json({ message: `Device ${deviceId} set to ${state}` });
+    });
+});
+
+
+// Schedule API endpoints
+app.get('/espcontrol/api/schedule/:deviceId', authenticateToken, (req, res) => {
+    const deviceId = req.params.deviceId;
+    const userId = req.user.id;
+
+    db.get('SELECT * FROM schedules WHERE device_id = ? AND user_id = ?', [deviceId, userId], (err, schedule) => {
+        if (err) {
+            console.error('[DB] Error fetching schedule:', err.message);
+            return res.status(500).json({ error: 'Database error fetching schedule' });
+        }
+        if (!schedule) {
+            return res.json({ events: [], timezone: 'UTC' }); // Return empty if no schedule found
+        }
+        res.json({
+            timezone: schedule.timezone,
+            events: JSON.parse(schedule.events_json)
+        });
+    });
+});
+
+app.post('/espcontrol/api/schedule/:deviceId', authenticateToken, (req, res) => {
+    const deviceId = req.params.deviceId;
+    const { timezone, events } = req.body;
+    const userId = req.user.id;
+
+    if (!timezone || !Array.isArray(events)) {
+        return res.status(400).json({ error: 'Timezone and events array are required.' });
     }
 
-    db.serialize(() => {
-        db.run(`UPDATE devices SET timezone = ? WHERE id = ?`, [timezone, deviceId], function(err) {
+    const eventsJson = JSON.stringify(events);
+
+    db.run(
+        'INSERT OR REPLACE INTO schedules (device_id, user_id, timezone, events_json) VALUES (?, ?, ?, ?)',
+        [deviceId, userId, timezone, eventsJson],
+        function (err) {
             if (err) {
-                console.error('[SCHEDULE] Failed to save timezone:', err);
-                return res.status(500).send('Failed to save device timezone.');
+                console.error('[DB] Error saving schedule:', err.message);
+                return res.status(500).json({ error: 'Database error saving schedule' });
             }
-            console.log(`[SCHEDULE] Updated timezone for device ${deviceId} to ${timezone}`);
-        });
-
-        db.run(`DELETE FROM schedules WHERE device_id = ?`, [deviceId], function(err) {
-            if (err) {
-                console.error('[SCHEDULE] Failed to clear old schedule:', err);
-                return res.status(500).send('Failed to clear old schedule.');
-            }
-
-            const stmt = db.prepare(`INSERT INTO schedules (device_id, time, state) VALUES (?, ?, ?)`);
-            for (const event of events) {
-                if (event.time && (event.state === 'ON' || event.state === 'OFF')) {
-                    stmt.run(deviceId, event.time, event.state);
-                }
-            }
-            stmt.finalize(err => {
-                if (err) {
-                    console.error('[SCHEDULE] Failed to save new schedule:', err);
-                    return res.status(500).send('Failed to save schedule');
-                }
-                console.log(`[SCHEDULE] Updated schedule for device ${deviceId}`);
-                loadAllSchedules();
-                res.send('Schedule updated');
-            });
-        });
-    });
-});
-
-app.get('/espcontrol/api/devices', isAuthenticated, (req, res) => {
-    const userId = req.session.userId;
-    db.all(
-        `SELECT id, device_name FROM devices WHERE user_id = ?`,
-        [userId],
-        (err, rows) => {
-            if (err) {
-                console.error('[DEVICES] DB read error:', err);
-                return res.status(500).send('Failed to load devices.');
-            }
-            res.json(rows);
-        }
-    );
-});
-
-// NEW SCHEDULING LOGIC BELOW
-
-function loadAllSchedules() {
-    console.log('[SCHEDULER] Loading all schedules from database...');
-    db.all(
-        `SELECT s.device_id, s.time, s.state, d.timezone
-         FROM schedules s
-         JOIN devices d ON s.device_id = d.id`,
-        (err, rows) => {
-            if (err) {
-                console.error('[SCHEDULER] Error loading schedules:', err);
-                return;
-            }
-
-            for (const deviceId in loadedSchedules) {
+            // Clear existing cron jobs for this device
+            if (loadedSchedules[deviceId]) {
+                loadedSchedules[deviceId].forEach(job => job.stop());
                 delete loadedSchedules[deviceId];
             }
-            for (const deviceId in deviceTimezones) {
-                delete deviceTimezones[deviceId];
-            }
-
-            rows.forEach(row => {
-                if (!loadedSchedules[row.device_id]) {
-                    loadedSchedules[row.device_id] = [];
-                }
-                loadedSchedules[row.device_id].push({ time: row.time, state: row.state });
-                deviceTimezones[row.device_id] = row.timezone || 'UTC';
-            });
-            console.log(`[SCHEDULER] Loaded schedules for ${Object.keys(loadedSchedules).length} devices.`);
+            // Load and schedule new events
+            loadAndScheduleEvents(deviceId, userId);
+            res.json({ message: 'Schedule saved successfully.' });
         }
     );
-}
+});
 
-function checkSchedules() {
-    const now = moment();
-
-    for (const deviceId in loadedSchedules) {
-        const schedules = loadedSchedules[deviceId];
-        const deviceTz = deviceTimezones[deviceId];
-
-        if (!momentTz.tz.zone(deviceTz)) {
-            console.error(`[SCHEDULER] Invalid timezone for device ${deviceId}: ${deviceTz}. Skipping schedule check.`);
-            continue;
+// Function to load and schedule events from DB
+function loadAndScheduleEvents(deviceId, userId) {
+    db.get('SELECT * FROM schedules WHERE device_id = ? AND user_id = ?', [deviceId, userId], (err, schedule) => {
+        if (err || !schedule) {
+            console.error(`[CRON] Could not load schedule for device ${deviceId}:`, err ? err.message : 'No schedule found');
+            return;
         }
 
-        const nowInDeviceTz = momentTz.tz(now, deviceTz);
-        const currentMinuteOfDay = nowInDeviceTz.hours() * 60 + nowInDeviceTz.minutes();
+        const events = JSON.parse(schedule.events_json);
+        const timezone = schedule.timezone;
+        loadedSchedules[deviceId] = [];
 
-        schedules.forEach(event => {
-            const [hour, minute] = event.time.split(':').map(Number);
-            const eventMinuteOfDay = hour * 60 + minute;
+        events.forEach(event => {
+            const [hour, minute] = event.time.split(':');
+            const cronTime = `${minute} ${hour} * * *`; // Minute Hour DayOfMonth Month DayOfWeek
 
-            if (currentMinuteOfDay === eventMinuteOfDay) {
-                const lastTriggerKey = `${deviceId}-${event.time}-${event.state}`;
-                const lastTriggerMinute = global.lastScheduleTriggeredMinute || {};
-
-                if (lastTriggerMinute[lastTriggerKey] !== currentMinuteOfDay) {
-                    console.log(`[SCHEDULER] Executing scheduled event for device ${deviceId} at ${nowInDeviceTz.format('HH:mm z')} (target: ${event.time}): set to ${event.state}`);
-                    deviceStates[deviceId] = event.state;
-                    lastTriggerMinute[lastTriggerKey] = currentMinuteOfDay;
-                    global.lastScheduleTriggeredMinute = lastTriggerMinute;
-                } else {
-                    // console.log(`[SCHEDULER] Skipping duplicate trigger for device ${deviceId} at ${event.time}`);
-                }
-            }
+            const job = cron.schedule(cronTime, () => {
+                const now = momentTz().tz(timezone);
+                console.log(`[CRON] Executing scheduled action for device ${deviceId} at ${now.format('HH:mm z')}: ${event.action}`);
+                // In a real scenario, this would send a command to the ESP8266
+                deviceStates[deviceId] = event.action; // Update in-memory state
+            }, {
+                scheduled: true,
+                timezone: timezone
+            });
+            loadedSchedules[deviceId].push(job);
         });
-    }
+        console.log(`[CRON] Scheduled ${events.length} events for device ${deviceId} in timezone ${timezone}.`);
+    });
 }
 
-global.lastScheduleTriggeredMinute = {};
-
-loadAllSchedules();
-
-cron.schedule('* * * * *', () => {
-    checkSchedules();
+// Load all schedules on server startup
+db.all('SELECT device_id, user_id FROM schedules', [], (err, rows) => {
+    if (err) {
+        console.error('[CRON] Error loading schedules on startup:', err.message);
+        return;
+    }
+    rows.forEach(row => {
+        loadAndScheduleEvents(row.device_id, row.user_id);
+        deviceStates[row.device_id] = 'OFF'; // 🛠️ default initial state
+    });
 });
 
 
-// --- Integration Management API Endpoints ---
-// These endpoints are for managing the connection details for external integrations like Growatt.
+// --- INTEGRATION API ENDPOINTS ---
 
-// Get all integrations for the logged-in user
-app.get('/espcontrol/api/integrations', isAuthenticated, (req, res) => {
-    const userId = req.session.userId;
-    db.all(`SELECT id, integration_type, name, settings_json FROM integrations WHERE user_id = ?`, [userId], (err, rows) => {
+// GET all integrations for a user
+app.get('/espcontrol/api/integrations', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    db.all('SELECT id, name, integration_type, settings_json FROM integrations WHERE user_id = ?', [userId], (err, rows) => {
         if (err) {
-            console.error('[INTEGRATIONS] Error fetching integrations:', err.message);
-            return res.status(500).send('Failed to fetch integrations.');
+            console.error('[DB] Error fetching integrations:', err.message);
+            return res.status(500).json({ error: 'Database error fetching integrations' });
         }
-        // Parse settings_json back into objects before sending
-        const integrations = rows.map(row => ({
-            id: row.id,
-            integration_type: row.integration_type,
-            name: row.name,
-            // SECURITY NOTE: Do NOT send sensitive info like passwords to the client
-            // Filter settings if necessary before sending to client, e.g., only send username, server, but not password
-            settings: JSON.parse(row.settings_json)
-        }));
+        // Parse settings_json for each integration before sending
+        const integrations = rows.map(row => {
+            const integration = { ...row };
+            if (integration.settings_json) {
+                integration.settings = JSON.parse(integration.settings_json);
+                delete integration.settings_json; // Remove the raw JSON string
+            } else {
+                integration.settings = {};
+            }
+            return integration;
+        });
         res.json(integrations);
     });
 });
 
-// Add a new integration for the logged-in user
-app.post('/espcontrol/api/integrations', isAuthenticated, express.json(), (req, res) => {
-    const userId = req.session.userId;
-    const { integration_type, name, settings } = req.body;
+// POST a new integration
+app.post('/espcontrol/api/integrations', authenticateToken, (req, res) => {
+    const { name, integration_type, settings } = req.body;
+    const userId = req.user.id;
 
-    if (!integration_type || !name || !settings) {
-        return res.status(400).send('Missing integration_type, name, or settings.');
+    if (!name || !integration_type || !settings) {
+        return res.status(400).json({ error: 'Name, integration_type, and settings are required.' });
     }
 
-    const settingsJsonString = JSON.stringify(settings); // Convert settings object to JSON string
+    const settingsJson = JSON.stringify(settings);
 
-    db.run(`INSERT INTO integrations (user_id, integration_type, name, settings_json) VALUES (?, ?, ?, ?)`,
-        [userId, integration_type, name, settingsJsonString],
-        function(err) {
+    db.run(
+        'INSERT INTO integrations (user_id, name, integration_type, settings_json) VALUES (?, ?, ?, ?)',
+        [userId, name, integration_type, settingsJson],
+        function (err) {
             if (err) {
-                console.error('[INTEGRATIONS] Error adding integration:', err.message);
-                // Check for unique constraint violation
-                if (err.message.includes('UNIQUE constraint failed')) {
-                    return res.status(409).send('An integration with this name already exists for your user.');
-                }
-                return res.status(500).send('Failed to add integration.');
+                console.error('[DB] Error adding integration:', err.message);
+                return res.status(500).json({ error: 'Database error adding integration' });
             }
-            res.status(201).json({ id: this.lastID, message: 'Integration added successfully!' });
+            res.status(201).json({ message: 'Integration added successfully', id: this.lastID });
         }
     );
 });
 
-// ✅ NEW: Endpoint to get data from Growatt using stored credentials
-app.get('/espcontrol/api/integrations/growatt/:integrationId/data', isAuthenticated, async (req, res) => {
-    const integrationId = req.params.integrationId;
-    const userId = req.session.userId;
-
-    try {
-        // Retrieve Growatt integration settings from the database
-        db.get(`SELECT settings_json FROM integrations WHERE id = ? AND user_id = ? AND integration_type = 'Growatt'`,
-            [integrationId, userId],
-            async (err, row) => {
-                if (err) {
-                    console.error('[GROWATT] Error fetching Growatt integration settings:', err.message);
-                    return res.status(500).send('Failed to retrieve integration settings.');
-                }
-                if (!row) {
-                    return res.status(404).send('Growatt integration not found or not authorized.');
-                }
-
-                // --- FIX 1: Ensure settings is an object and pass all required arguments to constructor ---
-                let settings = {};
-                try {
-                    // Safely parse settings_json, defaulting to an empty JSON object if null/undefined
-                    settings = JSON.parse(row.settings_json || '{}');
-                } catch (parseError) {
-                    console.error(`[GROWATT] Error parsing settings_json for integration ${integrationId}:`, parseError.message);
-                    return res.status(500).json({ error: 'Invalid Growatt integration settings configuration.' });
-                }
-
-                // Instantiate Growatt client with all required arguments
-                // Pass 'db' and 'integrationId' from the current context
-                const growattIntegrationInstance = new GrowattIntegration(db, integrationId, settings);
-                // --- END FIX 1 ---
-
-                try {
-                    // --- FIX 2: Call the correct method (fetchData) ---
-                    const data = await growattIntegrationInstance.fetchData(); // Call fetchData instead of getRealtimeData
-                    res.json(data);
-                } catch (growattErr) {
-                    console.error('[GROWATT] Error fetching data from Growatt:', growattErr.message);
-                    res.status(500).send(`Failed to fetch data from Growatt: ${growattErr.message}`);
-                }
-            }
-        );
-    } catch (generalErr) {
-        console.error('[GROWATT] General error in Growatt data endpoint:', generalErr.message);
-        res.status(500).send('An unexpected error occurred.');
-    }
-});
-
-// Route to get a specific integration by ID for the logged-in user
-app.get('/espcontrol/api/integrations/:id', isAuthenticated, (req, res) => {
+// DELETE an integration
+app.delete('/espcontrol/api/integrations/:id', authenticateToken, (req, res) => {
     const integrationId = req.params.id;
-    const userId = req.session.userId; // Get user ID from session
+    const userId = req.user.id;
 
-    db.get('SELECT * FROM integrations WHERE id = ? AND user_id = ?', [integrationId, userId], (err, integration) => {
+    db.run('DELETE FROM integrations WHERE id = ? AND user_id = ?', [integrationId, userId], function (err) {
         if (err) {
-            console.error('[DB] Error fetching integration by ID:', err.message);
-            return res.status(500).json({ error: 'Database error fetching integration' });
+            console.error('[DB] Error deleting integration:', err.message);
+            return res.status(500).json({ error: 'Database error deleting integration' });
         }
-        if (!integration) {
+        if (this.changes === 0) {
             return res.status(404).json({ error: 'Integration not found or not owned by user' });
         }
-        // Parse settings JSON string back into an object
-        // Corrected from previous review: ensures settings_json is parsed
-        if (integration.settings_json) {
-            integration.settings = JSON.parse(integration.settings_json);
-        } else {
-            integration.settings = {}; // Default to empty object if no settings_json
-        }
-        res.json(integration);
+        res.json({ message: 'Integration deleted successfully' });
     });
 });
 
-app.post('/espcontrol/growatt/login', async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const loginRes = await growatt.login(email, password);
-    const token = loginRes.data.userId;
-    req.session.growatt = { token, email, password };
+// PUT (update) an integration
+app.put('/espcontrol/api/integrations/:id', authenticateToken, (req, res) => {
+    const integrationId = req.params.id;
+    const { name, integration_type, settings } = req.body; // settings should be an object
+    const userId = req.user.id;
 
-    const plants = await growatt.getPlants(token);
-    const inverters = [];
-
-    for (const plant of plants) {
-      const invs = await growatt.getInverters(token, plant.plantId);
-      inverters.push(...invs.map(i => ({ ...i, plantId: plant.plantId, plantName: plant.plantName })));
+    if (!name || !integration_type || !settings) {
+        return res.status(400).json({ error: 'Name, integration_type, and settings are required.' });
     }
 
-    res.json({ plants, inverters });
-  } catch (err) {
-    console.error('[GROWATT] Login failed:', err);
-    res.status(401).send('Growatt login failed');
-  }
+    const settingsJson = JSON.stringify(settings); // Convert settings object back to JSON string
+
+    db.run(
+        'UPDATE integrations SET name = ?, integration_type = ?, settings_json = ? WHERE id = ? AND user_id = ?',
+        [name, integration_type, settingsJson, integrationId, userId],
+        function (err) {
+            if (err) {
+                console.error('[DB] Error updating integration:', err.message);
+                return res.status(500).json({ error: 'Database error updating integration' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'Integration not found or not owned by user' });
+            }
+            res.json({ message: 'Integration updated successfully' });
+        }
+    );
+});
+
+
+// NEW: Endpoint to fetch Growatt data for a specific integration
+app.get('/espcontrol/api/integrations/growatt/:integrationId/data', authenticateToken, async (req, res) => {
+    const integrationId = req.params.integrationId;
+    const userId = req.user.id;
+
+    db.get('SELECT settings_json FROM integrations WHERE id = ? AND user_id = ? AND integration_type = ?',
+        [integrationId, userId, 'Growatt'],
+        async (err, row) => {
+            if (err) {
+                console.error('[DB] Error fetching Growatt integration settings:', err.message);
+                return res.status(500).json({ error: 'Database error fetching integration settings' });
+            }
+            if (!row || !row.settings_json) {
+                return res.status(404).json({ error: 'Growatt integration not found or settings are missing.' });
+            }
+
+            try {
+                const settings = JSON.parse(row.settings_json);
+                // Create an instance of GrowattIntegration using the retrieved settings
+                const growattIntegration = new GrowattIntegration(db, integrationId, settings);
+                const data = await growattIntegration.fetchData(); // This should return the inverterSummaries and allRawPlantData
+                res.json(data);
+            } catch (error) {
+                console.error(`[API] Error fetching Growatt data for integration ${integrationId}:`, error.message);
+                res.status(500).json({ error: 'Failed to fetch Growatt data', details: error.message });
+            }
+        }
+    );
 });
 
 
 // Start the server
 server.listen(port, () => {
-    console.log(`[STARTED] ESP Control Server running at http://localhost:${port}`);
-    console.log(`[SCHEDULER] Cron job scheduled to check schedules every minute.`);
+    console.log(`Server running on http://localhost:${port}/espcontrol/`);
+    console.log('Ensure your ESP8266 devices are configured to connect to this server.');
 });

@@ -14,6 +14,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
     // Create tables if they don't exist
     db.serialize(() => {
+      // Users Table
       db.run(`
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,50 +26,54 @@ const db = new sqlite3.Database(dbPath, (err) => {
         else console.log('[DB] Users table ensured.');
       });
 
+      // Devices Table
       db.run(`
         CREATE TABLE IF NOT EXISTS devices (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL,
           device_name TEXT NOT NULL,
-          timezone TEXT DEFAULT 'UTC', -- ✅ NEW COLUMN: timezone
-          FOREIGN KEY (user_id) REFERENCES users(id)
+          timezone TEXT DEFAULT 'UTC',
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `, (err) => {
         if (err) console.error('[DB] Error creating devices table:', err.message);
         else console.log('[DB] Devices table ensured.');
       });
 
+      // Schedules Table (Corrected with events_json column)
       db.run(`
         CREATE TABLE IF NOT EXISTS schedules (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           device_id INTEGER NOT NULL,
-          time TEXT NOT NULL, -- e.g., "14:30"
-          state TEXT NOT NULL, -- "ON" or "OFF"
-          FOREIGN KEY (device_id) REFERENCES devices(id)
+          user_id INTEGER NOT NULL,
+          timezone TEXT NOT NULL,
+          events_json TEXT NOT NULL,
+          FOREIGN KEY (device_id) REFERENCES devices(id),
+          FOREIGN KEY (user_id) REFERENCES users(id)
         )
       `, (err) => {
         if (err) console.error('[DB] Error creating schedules table:', err.message);
         else console.log('[DB] Schedules table ensured.');
       });
 
-      // ✅ NEW TABLE: integrations
+      // Integrations Table (for Growatt and other future integrations)
       db.run(`
         CREATE TABLE IF NOT EXISTS integrations (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL,
-          integration_type TEXT NOT NULL, -- e.g., 'Growatt', 'SolarEdge', 'Tesla Powerwall'
-          name TEXT NOT NULL, -- A user-friendly name for this specific integration instance
-          settings_json TEXT NOT NULL, -- JSON string containing credentials and other settings (e.g., { "username": "...", "password": "...", "server": "..." })
-          FOREIGN KEY (user_id) REFERENCES users(id),
-          UNIQUE(user_id, name) -- Ensure a user doesn't have duplicate integration names
+          integration_type TEXT NOT NULL, /* e.g., 'Growatt' */
+          name TEXT NOT NULL,
+          settings_json TEXT NOT NULL, /* Stores integration-specific settings as JSON */
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
       `, (err) => {
         if (err) console.error('[DB] Error creating integrations table:', err.message);
         else console.log('[DB] Integrations table ensured.');
       });
 
-      // Add a default user if none exist
-      // This is for initial setup. You can remove this block after your first run.
+      // Add a default admin user and device if no users exist
+      // You should remove this block after your first run, or change the default password!
       db.get(`SELECT COUNT(*) as count FROM users`, (err, row) => {
         if (err) {
           console.error('[DB] Error checking for default user:', err.message);
