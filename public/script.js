@@ -246,11 +246,9 @@ async function loadIntegrations() {
     const integrationListUl = document.getElementById('integrationList');
     integrationListUl.innerHTML = '<li>Loading integrations...</li>'; // Clear and show loading
 
-    const growattInverterTableBody = document.querySelector('#growattInverterDataTable tbody');
     const growattDataStatusDiv = document.getElementById('growattDataStatus');
     let allGrowattInverters = []; // To aggregate all inverters from all Growatt integrations
 
-    growattInverterTableBody.innerHTML = ''; // Clear previous Growatt data
     growattDataStatusDiv.textContent = 'Loading Growatt data...';
     growattDataStatusDiv.style.color = '#555';
 
@@ -473,34 +471,64 @@ async function fetchRawGrowattDataAndPlants(integrationId) {
     }
 }
 
-
 function displayGrowattInvertersTable(inverters) {
     const tbody = document.querySelector('#growattInverterDataTable tbody');
     const growattDataStatusDiv = document.getElementById('growattDataStatus');
     const growattInverterDataTable = document.getElementById('growattInverterDataTable');
 
-    tbody.innerHTML = ''; // Clear existing rows
-    growattInverterDataTable.style.display = inverters.length > 0 ? '' : 'none'; // Show table if data, hide otherwise
+    // Create a set of inverter IDs from the new data for efficient lookup
+    const newInverterIds = new Set(inverters.map(inv => inv.inverterId));
+
+    // Map existing rows by their inverter ID
+    const existingRows = new Map();
+    tbody.querySelectorAll('tr').forEach(row => {
+        const inverterId = row.id.replace('inverter-row-', ''); // Assuming ID format 'inverter-row-YOUR_ID'
+        existingRows.set(inverterId, row);
+    });
 
     if (inverters.length === 0) {
+        growattInverterDataTable.style.display = 'none';
         growattDataStatusDiv.textContent = 'No Growatt inverter data available. Add a Growatt integration, or check its configuration.';
         growattDataStatusDiv.style.color = '#555';
         return;
     }
 
+    growattInverterDataTable.style.display = ''; // Ensure table is visible
+
     inverters.forEach(inv => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${inv.plantName || 'N/A'}</td>
-            <td>${inv.inverterId || 'N/A'}</td>
-            <td>${inv.batteryVoltage || 'N/A'}</td>
-            <td>${inv.batteryPercentage || 'N/A'}</td>
-            <td>${inv.acInputPower || 'N/A'}</td>
-            <td>${inv.acOutputPower || 'N/A'}</td>
-            <td>${inv.solarPanelPower || 'N/A'}</td>
-        `;
-        tbody.appendChild(row);
+        const rowId = `inverter-row-${inv.inverterId}`;
+        let row = existingRows.get(inv.inverterId);
+
+        if (row) {
+            // Update existing row
+            row.querySelector(`#${rowId}-plantName`).textContent = inv.plantName || 'N/A';
+            row.querySelector(`#${rowId}-inverterId`).textContent = inv.inverterId || 'N/A';
+            row.querySelector(`#${rowId}-batteryVoltage`).textContent = inv.batteryVoltage || 'N/A';
+            row.querySelector(`#${rowId}-batteryPercentage`).textContent = inv.batteryPercentage || 'N/A';
+            row.querySelector(`#${rowId}-acInputPower`).textContent = inv.acInputPower || 'N/A';
+            row.querySelector(`#${rowId}-acOutputPower`).textContent = inv.acOutputPower || 'N/A';
+            row.querySelector(`#${rowId}-solarPanelPower`).textContent = inv.solarPanelPower || 'N/A';
+            existingRows.delete(inv.inverterId); // Mark as updated
+        } else {
+            // Create new row
+            row = document.createElement('tr');
+            row.id = rowId;
+            row.innerHTML = `
+                <td id="${rowId}-plantName">${inv.plantName || 'N/A'}</td>
+                <td id="${rowId}-inverterId">${inv.inverterId || 'N/A'}</td>
+                <td id="${rowId}-batteryVoltage">${inv.batteryVoltage || 'N/A'}</td>
+                <td id="${rowId}-batteryPercentage">${inv.batteryPercentage || 'N/A'}</td>
+                <td id="${rowId}-acInputPower">${inv.acInputPower || 'N/A'}</td>
+                <td id="${rowId}-acOutputPower">${inv.acOutputPower || 'N/A'}</td>
+                <td id="${rowId}-solarPanelPower">${inv.solarPanelPower || 'N/A'}</td>
+            `;
+            tbody.appendChild(row);
+        }
     });
+
+    // Remove rows that are no longer in the new data
+    existingRows.forEach(row => row.remove());
+
     growattDataStatusDiv.textContent = `Growatt data refreshed: ${new Date().toLocaleTimeString()}`;
     growattDataStatusDiv.style.color = 'green';
 }
@@ -591,23 +619,3 @@ document.addEventListener('DOMContentLoaded', () => {
     if (growattDataRefreshInterval) clearInterval(growattDataRefreshInterval);
     growattDataRefreshInterval = setInterval(loadIntegrations, 30000); // Refreshes all integrations & Growatt data
 });
-// --- New Function for Section Toggling ---
-function toggleSection(sectionId) {
-    const section = document.getElementById(sectionId);
-    if (!section) {
-        console.error(`Section with ID '${sectionId}' not found.`);
-        return;
-    }
-    const content = section.querySelector('.section-content');
-    const icon = section.querySelector('.toggle-section-icon');
-
-    if (content.classList.contains('hidden')) {
-        content.classList.remove('hidden');
-        icon.classList.remove('fa-plus-square');
-        icon.classList.add('fa-minus-square');
-    } else {
-        content.classList.add('hidden');
-        icon.classList.remove('fa-minus-square');
-        icon.classList.add('fa-plus-square');
-    }
-}
