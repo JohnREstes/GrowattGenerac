@@ -35,11 +35,15 @@ class GrowattIntegration {
             this.lastLoginTime = currentTime;
             console.log(`[GrowattIntegration-${this.integrationId}] Growatt login successful.`);
         } catch (error) {
-            this.isLoggedIn = false;
-            this.lastLoginTime = currentTime;
-            console.error(`[GrowattIntegration-${this.integrationId}] Growatt login failed:`, error.message);
-            throw new Error(`Failed to log in to Growatt: ${error.message}`);
+            // Only reset login if Growatt explicitly rejects session
+            if (error.message.includes('unauthorized') || error.message.includes('login')) {
+                this.isLoggedIn = false;
+            }
+
+            console.error(`[GrowattIntegration-${this.integrationId}] Error fetching data:`, error);
+            throw new Error(`Failed to fetch data from Growatt: ${error.message}`);
         }
+
     }
 
     async logout() {
