@@ -9,8 +9,7 @@
 <body>
     <h1>ESP8266 GPIO Control Panel</h1>
 
-    <button onclick="location.href='/espcontrol/logout'" style="float: right; margin-top: -40px;">🚪 Logout</button>
-
+    <button onclick="logoutClientAndServer()" style="float: right; margin-top: -40px;">🚪 Logout</button>
     <div class="section" id="gpioSection">
         <h2>GPIO Control <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('gpioSection')"></i></h2>
         <div class="section-content">

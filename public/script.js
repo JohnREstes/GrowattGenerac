@@ -24,11 +24,20 @@ async function fetchData(url, method = 'GET', body = null) {
             options.headers['Authorization'] = `Bearer ${token}`;
         }
 
-        if (body) {
-            options.body = JSON.stringify(body);
-        }
-
         const response = await fetch(url, options);
+
+        // --- NEW: Handle 401/403 responses for redirection ---
+        if (response.status === 401 || response.status === 403) {
+            console.warn('Authentication error (401/403) during API fetch. Redirecting to login.');
+            // Clear any potentially stale token
+            localStorage.removeItem('jwtToken');
+            // Redirect to login page
+            window.location.href = '/espcontrol/login.html';
+            // Throw an error to stop further processing in the calling function
+            throw new Error('Unauthorized or Forbidden access. Redirecting...');
+        }
+        // --- END NEW ---
+
         // Always try to parse JSON, even if response is not ok, as backend might send error messages as JSON
         const text = await response.text();
         let json = {};
@@ -44,7 +53,9 @@ async function fetchData(url, method = 'GET', body = null) {
         return json; // Return the parsed JSON data directly
     } catch (error) {
         console.error('Fetch error:', error);
-        throw error; // Re-throw the error for the calling function to catch
+        // Important: Re-throw if it's not the redirection error handled above
+        // This ensures calling functions can still catch network errors or other issues
+        throw error;
     }
 }
 
@@ -619,3 +630,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (growattDataRefreshInterval) clearInterval(growattDataRefreshInterval);
     growattDataRefreshInterval = setInterval(loadIntegrations, 30000); // Refreshes all integrations & Growatt data
 });
+
+function logoutClientAndServer() {
+
+    localStorage.removeItem('jwtToken');
+    console.log('[CLIENT] JWT Token cleared from localStorage.');
+
+    window.location.href = '/espcontrol/logout';
+}
