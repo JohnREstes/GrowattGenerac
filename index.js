@@ -391,7 +391,7 @@ app.get('/espcontrol/api/integrations/growatt/:integrationId/data', authenticate
             try {
                 const settings = JSON.parse(row.settings_json);
                 // Create an instance of GrowattIntegration using the retrieved settings
-                const growattIntegration = new GrowattIntegration(db, integrationId, settings);
+                const growattIntegration = GrowattIntegration.getInstance(db, integrationId, settings);
                 const data = await growattIntegration.fetchData(); // This should return the inverterSummaries and allRawPlantData
                 res.json(data);
             } catch (error) {

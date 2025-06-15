@@ -1,5 +1,5 @@
-// integrations/growatt.js
 const Growatt = require('growatt');
+const growattInstances = {}; // 🧠 Integration cache
 
 class GrowattIntegration {
     constructor(db, integrationId, settings) {
@@ -10,21 +10,26 @@ class GrowattIntegration {
         this.growatt = new Growatt({});
         this.isLoggedIn = false;
         this.lastLoginTime = 0;
-        this.loginTimeout = 24 * 60 * 60 * 1000; // ⏰ 24 hours in milliseconds
+        this.loginTimeout = 24 * 60 * 60 * 1000;
 
         this.settings.plantId = this.settings.plantId || null;
         this.settings.deviceSerialNumbers = this.settings.deviceSerialNumbers || [];
     }
 
-    async login(force = false) {
-        if (!this.settings.username || !this.settings.password || !this.settings.server) {
-            throw new Error('Growatt username, password, or server URL not configured.');
+    static getInstance(db, integrationId, settings) {
+        if (!growattInstances[integrationId]) {
+            growattInstances[integrationId] = new GrowattIntegration(db, integrationId, settings);
+        } else {
+            // Update settings if changed (optional)
+            growattInstances[integrationId].settings = settings;
         }
+        return growattInstances[integrationId];
+    }
 
+    async login(force = false) {
         const currentTime = Date.now();
 
         if (!force && this.isLoggedIn && (currentTime - this.lastLoginTime < this.loginTimeout)) {
-            // 🟢 Already logged in and session still valid
             return;
         }
 
@@ -35,15 +40,12 @@ class GrowattIntegration {
             this.lastLoginTime = currentTime;
             console.log(`[GrowattIntegration-${this.integrationId}] Growatt login successful.`);
         } catch (error) {
-            // Only reset login if Growatt explicitly rejects session
             if (error.message.includes('unauthorized') || error.message.includes('login')) {
                 this.isLoggedIn = false;
             }
-
             console.error(`[GrowattIntegration-${this.integrationId}] Error fetching data:`, error);
             throw new Error(`Failed to fetch data from Growatt: ${error.message}`);
         }
-
     }
 
     async logout() {
@@ -58,7 +60,7 @@ class GrowattIntegration {
     }
 
     async fetchData() {
-        await this.login(); // Reuse cached session if valid
+        await this.login();
 
         try {
             const allPlantData = await this.growatt.getAllPlantData({});
@@ -97,13 +99,11 @@ class GrowattIntegration {
                         if (targetPlant.devices?.[serial]) {
                             filteredDevices[serial] = targetPlant.devices[serial];
                         } else {
-                            console.warn(`[GrowattIntegration-${this.integrationId}] Configured serial ${serial} not found for plant ${this.settings.plantId}.`);
+                            console.warn(`[GrowattIntegration-${this.integrationId}] Serial ${serial} not found.`);
                         }
                     }
                     relevantData.plantData.devices = filteredDevices;
                 }
-            } else if (this.settings.plantId) {
-                console.warn(`[GrowattIntegration-${this.integrationId}] Configured Plant ID ${this.settings.plantId} not found.`);
             }
 
             return relevantData;
