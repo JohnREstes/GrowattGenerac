@@ -558,6 +558,27 @@ if (growattIntegrationForm) {
     });
 }
 
+// --- New Function for Section Toggling ---
+function toggleSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (!section) {
+        console.error(`Section with ID '${sectionId}' not found.`);
+        return;
+    }
+    const content = section.querySelector('.section-content');
+    const icon = section.querySelector('.toggle-section-icon');
+
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        icon.classList.remove('fa-plus-square');
+        icon.classList.add('fa-minus-square');
+    } else {
+        content.classList.add('hidden');
+        icon.classList.remove('fa-minus-square');
+        icon.classList.add('fa-plus-square');
+    }
+}
+
 
 // --- Initial Page Load Functions ---
 document.addEventListener('DOMContentLoaded', () => {
