@@ -42,6 +42,32 @@
             <button onclick="saveSchedule()">💾 Save Schedule</button>
 
             <div id="saveStatus" style="margin-top: 10px;"></div>
+            <div id="batteryTriggers" class="section" style="margin-top: 20px;">
+            <h3>Battery-Based Trigger Rules</h3>
+            <!-- Trigger List Will Load Here -->
+            </div>
+
+            <div id="batteryTriggerForm" class="section">
+            <h3>Add / Update Trigger</h3>
+
+            <label for="inverterId">Inverter ID:</label>
+            <input type="text" id="inverterId" placeholder="e.g., UKDFBHG0GX">
+
+            <label for="metric">Metric:</label>
+            <select id="metric">
+                <option value="voltage">Battery Voltage</option>
+                <option value="percentage">Battery Percentage</option>
+            </select>
+
+            <label for="turnOnBelow">Turn ON below:</label>
+            <input type="number" step="0.1" id="turnOnBelow">
+
+            <label for="turnOffAbove">Turn OFF above:</label>
+            <input type="number" step="0.1" id="turnOffAbove">
+
+            <button onclick="saveBatteryTrigger()">Save Trigger</button>
+            </div>
+
         </div>
     </div>
 

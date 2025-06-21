@@ -191,6 +191,71 @@ async function loadSchedule() {
     }
 }
 
+// Add this to script.js after loadSchedule()
+
+async function loadBatteryTriggers() {
+    const deviceId = getSelectedDeviceId();
+    if (!deviceId) return;
+
+    try {
+        const data = await fetchData(`/espcontrol/api/battery-triggers/${deviceId}`);
+        const container = document.getElementById('batteryTriggers');
+        container.innerHTML = '';
+
+        if (!data.triggers || data.triggers.length === 0) {
+            container.innerHTML = '<p>No battery triggers set. Use the form below to add one.</p>';
+        } else {
+            data.triggers.forEach(trigger => {
+                const row = document.createElement('div');
+                row.className = 'trigger-row';
+                row.innerHTML = `
+                    <strong>Inverter:</strong> ${trigger.inverter_id} | 
+                    <strong>Metric:</strong> ${trigger.metric} | 
+                    <strong>Turn ON below:</strong> ${trigger.turn_on_below} | 
+                    <strong>Turn OFF above:</strong> ${trigger.turn_off_above} | 
+                    <strong>Status:</strong> ${trigger.is_enabled ? 'Enabled' : 'Disabled'}
+                    <button onclick="deleteTrigger(${trigger.id})">Delete</button>
+                `;
+                container.appendChild(row);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading battery triggers:', error);
+    }
+}
+
+async function saveBatteryTrigger() {
+    const deviceId = getSelectedDeviceId();
+    if (!deviceId) return alert('Please select a device.');
+
+    const inverterId = document.getElementById('inverterId').value;
+    const metric = document.getElementById('metric').value;
+    const turnOn = parseFloat(document.getElementById('turnOnBelow').value);
+    const turnOff = parseFloat(document.getElementById('turnOffAbove').value);
+
+    try {
+        await fetchData('/espcontrol/api/battery-triggers', 'POST', {
+            deviceId, inverterId, metric,
+            turn_on_below: turnOn,
+            turn_off_above: turnOff
+        });
+        alert('Battery trigger saved.');
+        loadBatteryTriggers();
+    } catch (err) {
+        alert(`Failed to save trigger: ${err.message}`);
+    }
+}
+
+async function deleteTrigger(id) {
+    try {
+        await fetchData(`/espcontrol/api/battery-triggers/${id}`, 'DELETE');
+        alert('Deleted trigger');
+        loadBatteryTriggers();
+    } catch (err) {
+        alert(`Failed to delete: ${err.message}`);
+    }
+}
+
 async function setIntegrationActive(integrationId, isActive) {
     try {
         await fetchData(`/espcontrol/api/integrations/${integrationId}/active`, 'POST', { isActive });

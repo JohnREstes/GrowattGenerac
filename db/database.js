@@ -2,9 +2,8 @@
 
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcrypt'); // Needed for hashing default user password
+const bcrypt = require('bcrypt');
 
-// Ensure the path to your DB is correct
 const dbPath = path.join(__dirname, 'espcontrol.db');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
@@ -12,21 +11,17 @@ const db = new sqlite3.Database(dbPath, (err) => {
   } else {
     console.log('[DB] Connected to SQLite database at', dbPath);
 
-    // Create tables if they don't exist
     db.serialize(() => {
-      // Users Table
+      // Users
       db.run(`
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           username TEXT UNIQUE NOT NULL,
           password TEXT NOT NULL
         )
-      `, (err) => {
-        if (err) console.error('[DB] Error creating users table:', err.message);
-        else console.log('[DB] Users table ensured.');
-      });
+      `);
 
-      // Devices Table
+      // Devices
       db.run(`
         CREATE TABLE IF NOT EXISTS devices (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,12 +30,9 @@ const db = new sqlite3.Database(dbPath, (err) => {
           timezone TEXT DEFAULT 'UTC',
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-      `, (err) => {
-        if (err) console.error('[DB] Error creating devices table:', err.message);
-        else console.log('[DB] Devices table ensured.');
-      });
+      `);
 
-      // Schedules Table (Corrected with events_json column)
+      // Schedules
       db.run(`
         CREATE TABLE IF NOT EXISTS schedules (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,53 +43,61 @@ const db = new sqlite3.Database(dbPath, (err) => {
           FOREIGN KEY (device_id) REFERENCES devices(id),
           FOREIGN KEY (user_id) REFERENCES users(id)
         )
-      `, (err) => {
-        if (err) console.error('[DB] Error creating schedules table:', err.message);
-        else console.log('[DB] Schedules table ensured.');
-      });
+      `);
 
-      // Integrations Table (for Growatt and other future integrations)
+      // Integrations
       db.run(`
         CREATE TABLE IF NOT EXISTS integrations (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           user_id INTEGER NOT NULL,
-          integration_type TEXT NOT NULL, /* e.g., 'Growatt' */
+          integration_type TEXT NOT NULL,
           name TEXT NOT NULL,
-          settings_json TEXT NOT NULL, /* Stores integration-specific settings as JSON */
+          settings_json TEXT NOT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          is_active INTEGER DEFAULT 0,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
-      `, (err) => {
-        if (err) console.error('[DB] Error creating integrations table:', err.message);
-        else console.log('[DB] Integrations table ensured.');
-      });
+      `);
 
-      // Add a default admin user and device if no users exist
-      // You should remove this block after your first run, or change the default password!
+      // Battery Triggers
+      db.run(`
+        CREATE TABLE IF NOT EXISTS battery_triggers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          device_id INTEGER NOT NULL,
+          inverter_id TEXT NOT NULL,
+          metric TEXT NOT NULL, -- 'voltage' or 'percentage'
+          turn_on_below REAL NOT NULL,
+          turn_off_above REAL NOT NULL,
+          is_enabled INTEGER DEFAULT 1,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (device_id) REFERENCES devices(id)
+        )
+      `);
+
+      // Unique index to support upsert logic
+      db.run(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_battery_trigger_per_device
+        ON battery_triggers (user_id, device_id)
+      `);
+
+      // Create default user and device (dev only — remove later!)
       db.get(`SELECT COUNT(*) as count FROM users`, (err, row) => {
-        if (err) {
-          console.error('[DB] Error checking for default user:', err.message);
-          return;
-        }
+        if (err) return console.error('[DB] Error checking for default user:', err.message);
         if (row.count === 0) {
-          const defaultUsername = 'admin';
-          const defaultPassword = 'password123'; // CHANGE THIS TO A SECURE PASSWORD!
-          bcrypt.hash(defaultPassword, 10, (err, hash) => {
-            if (err) {
-              console.error('[DB] Error hashing password for default user:', err.message);
-              return;
-            }
-            db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [defaultUsername, hash], function(err) {
-              if (err) {
-                console.error('[DB] Error inserting default user:', err.message);
-              } else {
-                console.log(`[DB] Default user '${defaultUsername}' added with ID: ${this.lastID}`);
-                // Add a default device for the admin user
-                db.run(`INSERT INTO devices (user_id, device_name, timezone) VALUES (?, ?, ?)`, [this.lastID, 'My ESP Device', 'America/Cancun'], function(err) {
-                    if (err) console.error('[DB] Error inserting default device:', err.message);
-                    else console.log(`[DB] Default device 'My ESP Device' added with ID: ${this.lastID}`);
+          const username = 'admin';
+          const password = 'password123'; // ⚠️ Change this before production
+          bcrypt.hash(password, 10, (err, hash) => {
+            if (err) return console.error('[DB] Error hashing password:', err.message);
+            db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hash], function (err) {
+              if (err) return console.error('[DB] Error inserting default user:', err.message);
+              const userId = this.lastID;
+              db.run(`INSERT INTO devices (user_id, device_name, timezone) VALUES (?, ?, ?)`,
+                [userId, 'My ESP Device', 'America/Cancun'],
+                function (err) {
+                  if (err) console.error('[DB] Error inserting default device:', err.message);
+                  else console.log(`[DB] Default device created with ID: ${this.lastID}`);
                 });
-              }
             });
           });
         }

@@ -441,10 +441,10 @@ app.get('/espcontrol/api/growatt/data/:integrationId', authenticateToken, (req, 
     );
 });
 
-
 async function refreshAllGrowattIntegrations() {
     console.log('[CRON] Starting scheduled Growatt data refresh for all integrations...');
-    db.all('SELECT id, settings_json FROM integrations WHERE integration_type = ?', ['Growatt'], async (err, rows) => {
+
+    db.all('SELECT id, user_id, settings_json FROM integrations WHERE integration_type = ?', ['Growatt'], async (err, rows) => {
         if (err) {
             console.error('[CRON] Error fetching Growatt integrations for refresh:', err.message);
             return;
@@ -454,15 +454,62 @@ async function refreshAllGrowattIntegrations() {
             try {
                 const settings = JSON.parse(row.settings_json);
                 const growattIntegration = GrowattIntegration.getInstance(db, row.id, settings);
-                await growattIntegration.fetchData(); // This will update the cached data within the instance
+                const data = await growattIntegration.fetchData(); // returns fresh Growatt data
+
+                if (data && data.inverters) {
+                    cache.growatt[row.id] = {
+                        data,
+                        timestamp: Date.now()
+                    };
+
+                    // 🧠 Check trigger rules right after caching new data
+                    applyBatteryTriggersForUser(row.user_id, data.inverters);
+                }
+
                 console.log(`[CRON] Successfully refreshed data for Growatt integration ID: ${row.id}`);
             } catch (error) {
                 console.error(`[CRON] Failed to refresh data for Growatt integration ID: ${row.id}:`, error.message);
             }
         }
+
         console.log('[CRON] Finished scheduled Growatt data refresh.');
     });
 }
+
+function applyBatteryTriggersForUser(userId, growattInverters) {
+    db.all(`
+        SELECT bt.*, d.id AS device_id
+        FROM battery_triggers bt
+        JOIN devices d ON bt.device_id = d.id
+        WHERE bt.user_id = ? AND bt.is_enabled = 1
+    `, [userId], (err, rows) => {
+        if (err) return console.error('[TRIGGER] Failed to load triggers:', err.message);
+
+        rows.forEach(trigger => {
+            const match = growattInverters.find(inv => inv.deviceSn === trigger.inverter_id);
+            if (!match) return;
+
+            const metricValue = trigger.metric === 'voltage'
+                ? parseFloat(match.batteryVoltage)
+                : parseFloat(match.batterySoc);
+
+            if (isNaN(metricValue)) return;
+
+            const currentState = deviceStates[trigger.device_id]?.state || 'unknown';
+
+            if (metricValue < trigger.turn_on_below && currentState !== 'on') {
+                console.log(`[TRIGGER] Turning ON device ${trigger.device_id} (metric ${metricValue} < ${trigger.turn_on_below})`);
+                toggleDevice(trigger.device_id, 'on');
+            }
+
+            if (metricValue > trigger.turn_off_above && currentState !== 'off') {
+                console.log(`[TRIGGER] Turning OFF device ${trigger.device_id} (metric ${metricValue} > ${trigger.turn_off_above})`);
+                toggleDevice(trigger.device_id, 'off');
+            }
+        });
+    });
+}
+
 
 app.post('/espcontrol/api/integrations/:id/active', authenticateToken, (req, res) => {
     const integrationId = req.params.id;
@@ -481,6 +528,134 @@ app.post('/espcontrol/api/integrations/:id/active', authenticateToken, (req, res
         }
     );
 });
+
+app.get('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    const deviceId = req.params.deviceId;
+
+    db.get(
+        `SELECT inverter_id, metric, turn_on_below, turn_off_above, is_enabled
+         FROM battery_triggers
+         WHERE user_id = ? AND device_id = ?`,
+        [userId, deviceId],
+        (err, row) => {
+            if (err) {
+                console.error('[DB] Error retrieving battery trigger:', err.message);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            if (!row) {
+                return res.json({ exists: false });
+            }
+            res.json({ exists: true, ...row });
+        }
+    );
+});
+
+app.post('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    const deviceId = req.params.deviceId;
+    const {
+        inverter_id,
+        metric, // 'voltage' or 'percentage'
+        turn_on_below,
+        turn_off_above,
+        is_enabled
+    } = req.body;
+
+    if (!inverter_id || !metric || turn_on_below == null || turn_off_above == null) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    db.run(
+        `INSERT INTO battery_triggers (user_id, device_id, inverter_id, metric, turn_on_below, turn_off_above, is_enabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(user_id, device_id) DO UPDATE SET
+            inverter_id = excluded.inverter_id,
+            metric = excluded.metric,
+            turn_on_below = excluded.turn_on_below,
+            turn_off_above = excluded.turn_off_above,
+            is_enabled = excluded.is_enabled`,
+        [userId, deviceId, inverter_id, metric, turn_on_below, turn_off_above, is_enabled ? 1 : 0],
+        function (err) {
+            if (err) {
+                console.error('[DB] Error saving battery trigger:', err.message);
+                return res.status(500).json({ error: 'Database error saving trigger' });
+            }
+            res.json({ message: 'Trigger saved successfully' });
+        }
+    );
+});
+
+app.get('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    const deviceId = req.params.deviceId;
+
+    db.all(
+        `SELECT id, inverter_id, metric, turn_on_below, turn_off_above, is_enabled
+         FROM battery_triggers
+         WHERE user_id = ? AND device_id = ?`,
+        [userId, deviceId],
+        (err, rows) => {
+            if (err) {
+                console.error('[DB] Error fetching triggers:', err.message);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            res.json({ triggers: rows });
+        }
+    );
+});
+
+app.post('/espcontrol/api/battery-triggers', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    const {
+        deviceId, inverterId, metric,
+        turn_on_below, turn_off_above,
+        is_enabled = 1
+    } = req.body;
+
+    if (!deviceId || !inverterId || !metric || turn_on_below == null || turn_off_above == null) {
+        return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    db.run(`
+        INSERT INTO battery_triggers (user_id, device_id, inverter_id, metric, turn_on_below, turn_off_above, is_enabled)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, device_id) DO UPDATE SET
+            inverter_id = excluded.inverter_id,
+            metric = excluded.metric,
+            turn_on_below = excluded.turn_on_below,
+            turn_off_above = excluded.turn_off_above,
+            is_enabled = excluded.is_enabled
+    `,
+        [userId, deviceId, inverterId, metric, turn_on_below, turn_off_above, is_enabled ? 1 : 0],
+        function (err) {
+            if (err) {
+                console.error('[DB] Error saving trigger:', err.message);
+                return res.status(500).json({ error: 'Database save failed' });
+            }
+            res.json({ success: true, message: 'Trigger saved' });
+        }
+    );
+});
+
+app.delete('/espcontrol/api/battery-triggers/:triggerId', authenticateToken, (req, res) => {
+    const userId = req.user.id;
+    const triggerId = req.params.triggerId;
+
+    db.run(
+        `DELETE FROM battery_triggers WHERE id = ? AND user_id = ?`,
+        [triggerId, userId],
+        function (err) {
+            if (err) {
+                console.error('[DB] Error deleting trigger:', err.message);
+                return res.status(500).json({ error: 'Delete failed' });
+            }
+            res.json({ success: true });
+        }
+    );
+});
+
+
 
 // Start the server
 server.listen(port, () => {
