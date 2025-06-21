@@ -17,47 +17,43 @@ async function fetchData(url, method = 'GET', body = null) {
             }
         };
 
-        // Retrieve the JWT token from localStorage
+        if (body) {
+            options.body = JSON.stringify(body); // ✅ ADD THIS LINE
+        }
+
         const token = localStorage.getItem('jwtToken');
         if (token) {
-            // Add the Authorization header if a token exists
             options.headers['Authorization'] = `Bearer ${token}`;
         }
 
         const response = await fetch(url, options);
 
-        // --- NEW: Handle 401/403 responses for redirection ---
         if (response.status === 401 || response.status === 403) {
             console.warn('Authentication error (401/403) during API fetch. Redirecting to login.');
-            // Clear any potentially stale token
             localStorage.removeItem('jwtToken');
-            // Redirect to login page
             window.location.href = '/espcontrol/login.html';
-            // Throw an error to stop further processing in the calling function
             throw new Error('Unauthorized or Forbidden access. Redirecting...');
         }
-        // --- END NEW ---
 
-        // Always try to parse JSON, even if response is not ok, as backend might send error messages as JSON
         const text = await response.text();
         let json = {};
         try {
             json = JSON.parse(text);
         } catch (e) {
-            json.error = text || response.statusText; // If not JSON, use raw text or status text as error
+            json.error = text || response.statusText;
         }
 
         if (!response.ok) {
             throw new Error(json.error || response.statusText || 'Something went wrong');
         }
-        return json; // Return the parsed JSON data directly
+
+        return json;
     } catch (error) {
         console.error('Fetch error:', error);
-        // Important: Re-throw if it's not the redirection error handled above
-        // This ensures calling functions can still catch network errors or other issues
         throw error;
     }
 }
+
 
 // --- Device Control Functions ---
 async function fetchDeviceState() {
@@ -192,52 +188,87 @@ async function loadSchedule() {
 }
 
 // Add this to script.js after loadSchedule()
-
 async function loadBatteryTriggers() {
     const deviceId = getSelectedDeviceId();
-    if (!deviceId) return;
+    const container = document.getElementById('batteryTriggersContainer');
+    container.innerHTML = '<p>Loading triggers...</p>';
 
     try {
-        const data = await fetchData(`/espcontrol/api/battery-triggers/${deviceId}`);
-        const container = document.getElementById('batteryTriggers');
-        container.innerHTML = '';
+        const response = await fetchData(`/espcontrol/api/battery-triggers/${deviceId}`);
+        const triggers = response.triggers;
 
-        if (!data.triggers || data.triggers.length === 0) {
-            container.innerHTML = '<p>No battery triggers set. Use the form below to add one.</p>';
-        } else {
-            data.triggers.forEach(trigger => {
-                const row = document.createElement('div');
-                row.className = 'trigger-row';
-                row.innerHTML = `
-                    <strong>Inverter:</strong> ${trigger.inverter_id} | 
-                    <strong>Metric:</strong> ${trigger.metric} | 
-                    <strong>Turn ON below:</strong> ${trigger.turn_on_below} | 
-                    <strong>Turn OFF above:</strong> ${trigger.turn_off_above} | 
-                    <strong>Status:</strong> ${trigger.is_enabled ? 'Enabled' : 'Disabled'}
-                    <button onclick="deleteTrigger(${trigger.id})">Delete</button>
-                `;
-                container.appendChild(row);
-            });
+        if (triggers.length === 0) {
+            container.innerHTML = '<p>No battery triggers configured for this device.</p>';
+            return;
         }
-    } catch (error) {
-        console.error('Error loading battery triggers:', error);
+
+        const table = document.createElement('table');
+        table.classList.add('trigger-table');
+        table.innerHTML = `
+            <thead>
+                <tr>
+                    <th>Inverter ID</th>
+                    <th>Metric</th>
+                    <th>Turn ON Below</th>
+                    <th>Turn OFF Above</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${triggers.map(trigger => `
+                    <tr>
+                        <td>${trigger.inverter_id}</td>
+                        <td>${trigger.metric}</td>
+                        <td>${trigger.turn_on_below}</td>
+                        <td>${trigger.turn_off_above}</td>
+                        <td>${trigger.is_enabled ? '✅ Enabled' : '❌ Disabled'}</td>
+                        <td>
+                            <button onclick="deleteBatteryTrigger(${trigger.id})">Delete</button>
+                        </td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        `;
+        container.innerHTML = '';
+        container.appendChild(table);
+
+    } catch (err) {
+        container.innerHTML = `<p style="color:red;">Failed to load battery triggers: ${err.message}</p>`;
     }
 }
 
+
 async function saveBatteryTrigger() {
     const deviceId = getSelectedDeviceId();
-    if (!deviceId) return alert('Please select a device.');
-
     const inverterId = document.getElementById('inverterId').value;
     const metric = document.getElementById('metric').value;
     const turnOn = parseFloat(document.getElementById('turnOnBelow').value);
     const turnOff = parseFloat(document.getElementById('turnOffAbove').value);
+    const is_enabled = true; // ✅ Ensure this is defined before using it
+
+    if (!deviceId || !inverterId || !metric || isNaN(turnOn) || isNaN(turnOff)) {
+        alert('Please fill out all fields before saving.');
+        return;
+    }
+
+    console.log('Trigger payload being sent:', {
+        deviceId,
+        inverterId,
+        metric,
+        turn_on_below: turnOn,
+        turn_off_above: turnOff,
+        is_enabled
+    });
 
     try {
         await fetchData('/espcontrol/api/battery-triggers', 'POST', {
-            deviceId, inverterId, metric,
+            deviceId,
+            inverterId,
+            metric,
             turn_on_below: turnOn,
-            turn_off_above: turnOff
+            turn_off_above: turnOff,
+            is_enabled
         });
         alert('Battery trigger saved.');
         loadBatteryTriggers();
@@ -246,15 +277,18 @@ async function saveBatteryTrigger() {
     }
 }
 
-async function deleteTrigger(id) {
+async function deleteBatteryTrigger(triggerId) {
+    if (!confirm('Are you sure you want to delete this trigger?')) return;
+
     try {
-        await fetchData(`/espcontrol/api/battery-triggers/${id}`, 'DELETE');
-        alert('Deleted trigger');
-        loadBatteryTriggers();
+        await fetchData(`/espcontrol/api/battery-triggers/${triggerId}`, 'DELETE');
+        alert('Trigger deleted.');
+        loadBatteryTriggers(); // Refresh list
     } catch (err) {
-        alert(`Failed to delete: ${err.message}`);
+        alert(`Failed to delete trigger: ${err.message}`);
     }
 }
+
 
 async function setIntegrationActive(integrationId, isActive) {
     try {
@@ -381,6 +415,7 @@ async function loadIntegrations() {
 
         // After fetching all integrations and their Growatt data, display them
         displayGrowattInvertersTable(allGrowattInverters);
+        populateInverterDropdownFromTable(allGrowattInverters);
 
     } catch (error) {
         integrationListUl.innerHTML = `<li>Error loading integrations: ${error.message}</li>`;
@@ -709,6 +744,28 @@ document.addEventListener('DOMContentLoaded', () => {
     growattDataRefreshInterval = setInterval(loadIntegrations, 30000); // Refreshes all integrations & Growatt data
 });
 
+function populateInverterDropdownFromTable() {
+    const table = document.getElementById('growattInverterDataTable');
+    const rows = table.querySelectorAll('tbody tr');
+    const select = document.getElementById('inverterId');
+    
+    select.innerHTML = '<option value="">-- Select Inverter --</option>';
+
+    rows.forEach(row => {
+        const inverterIdCell = row.querySelector('td:nth-child(2)');
+        const plantNameCell = row.querySelector('td:nth-child(1)');
+
+        if (inverterIdCell && plantNameCell) {
+            const inverterId = inverterIdCell.textContent.trim();
+            const plantName = plantNameCell.textContent.trim();
+
+            const option = document.createElement('option');
+            option.value = inverterId;
+            option.textContent = `${inverterId} (${plantName})`;
+            select.appendChild(option);
+        }
+    });
+}
 function logoutClientAndServer() {
 
     localStorage.removeItem('jwtToken');

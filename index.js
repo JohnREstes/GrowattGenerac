@@ -24,6 +24,9 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 const deviceStates = {};
 const loadedSchedules = {};
 const deviceTimezones = {};
+const cache = {
+    growatt: {} // or whatever other caches you're using
+};
 
 // Unauthenticated control check for ESP8266
 app.get('/espcontrol/device', (req, res) => {
@@ -134,15 +137,16 @@ app.get('/espcontrol/logout', (req, res) => {
 app.get('/espcontrol/api/devices', authenticateToken, (req, res) => {
     const userId = req.user.id;
     db.all(
-    'SELECT id, settings_json FROM integrations WHERE integration_type = ? AND (is_active IS NULL OR is_active = 0)',
-    ['Growatt'],
-    async (err, rows) => {
-        if (err) {
-            console.error('[DB] Error fetching devices:', err.message);
-            return res.status(500).json({ error: 'Database error fetching devices' });
+        'SELECT id, device_name, timezone FROM devices WHERE user_id = ?',
+        [userId],
+        (err, rows) => {
+            if (err) {
+                console.error('[DB] Error fetching devices:', err.message);
+                return res.status(500).json({ error: 'Database error fetching devices' });
+            }
+            res.json(rows);
         }
-        res.json(rows);
-    });
+    );
 });
 
 // GPIO control endpoint
@@ -529,63 +533,7 @@ app.post('/espcontrol/api/integrations/:id/active', authenticateToken, (req, res
     );
 });
 
-app.get('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, res) => {
-    const userId = req.user.id;
-    const deviceId = req.params.deviceId;
-
-    db.get(
-        `SELECT inverter_id, metric, turn_on_below, turn_off_above, is_enabled
-         FROM battery_triggers
-         WHERE user_id = ? AND device_id = ?`,
-        [userId, deviceId],
-        (err, row) => {
-            if (err) {
-                console.error('[DB] Error retrieving battery trigger:', err.message);
-                return res.status(500).json({ error: 'Database error' });
-            }
-            if (!row) {
-                return res.json({ exists: false });
-            }
-            res.json({ exists: true, ...row });
-        }
-    );
-});
-
-app.post('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, res) => {
-    const userId = req.user.id;
-    const deviceId = req.params.deviceId;
-    const {
-        inverter_id,
-        metric, // 'voltage' or 'percentage'
-        turn_on_below,
-        turn_off_above,
-        is_enabled
-    } = req.body;
-
-    if (!inverter_id || !metric || turn_on_below == null || turn_off_above == null) {
-        return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    db.run(
-        `INSERT INTO battery_triggers (user_id, device_id, inverter_id, metric, turn_on_below, turn_off_above, is_enabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, device_id) DO UPDATE SET
-            inverter_id = excluded.inverter_id,
-            metric = excluded.metric,
-            turn_on_below = excluded.turn_on_below,
-            turn_off_above = excluded.turn_off_above,
-            is_enabled = excluded.is_enabled`,
-        [userId, deviceId, inverter_id, metric, turn_on_below, turn_off_above, is_enabled ? 1 : 0],
-        function (err) {
-            if (err) {
-                console.error('[DB] Error saving battery trigger:', err.message);
-                return res.status(500).json({ error: 'Database error saving trigger' });
-            }
-            res.json({ message: 'Trigger saved successfully' });
-        }
-    );
-});
-
+// Get all battery triggers for a device
 app.get('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, res) => {
     const userId = req.user.id;
     const deviceId = req.params.deviceId;
@@ -605,13 +553,24 @@ app.get('/espcontrol/api/battery-triggers/:deviceId', authenticateToken, (req, r
     );
 });
 
+// Create or update battery trigger
 app.post('/espcontrol/api/battery-triggers', authenticateToken, (req, res) => {
     const userId = req.user.id;
     const {
-        deviceId, inverterId, metric,
-        turn_on_below, turn_off_above,
+        deviceId,
+        inverterId,
+        metric,
+        turn_on_below,
+        turn_off_above,
         is_enabled = 1
     } = req.body;
+
+    console.log('[DEBUG] Trigger POST payload:', req.body);
+    console.log('deviceId:', typeof deviceId, deviceId);
+    console.log('inverterId:', typeof inverterId, inverterId);
+    console.log('metric:', typeof metric, metric);
+    console.log('turn_on_below:', typeof turn_on_below, turn_on_below);
+    console.log('turn_off_above:', typeof turn_off_above, turn_off_above);
 
     if (!deviceId || !inverterId || !metric || turn_on_below == null || turn_off_above == null) {
         return res.status(400).json({ error: 'Missing required fields' });
@@ -620,12 +579,6 @@ app.post('/espcontrol/api/battery-triggers', authenticateToken, (req, res) => {
     db.run(`
         INSERT INTO battery_triggers (user_id, device_id, inverter_id, metric, turn_on_below, turn_off_above, is_enabled)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(user_id, device_id) DO UPDATE SET
-            inverter_id = excluded.inverter_id,
-            metric = excluded.metric,
-            turn_on_below = excluded.turn_on_below,
-            turn_off_above = excluded.turn_off_above,
-            is_enabled = excluded.is_enabled
     `,
         [userId, deviceId, inverterId, metric, turn_on_below, turn_off_above, is_enabled ? 1 : 0],
         function (err) {
@@ -633,11 +586,13 @@ app.post('/espcontrol/api/battery-triggers', authenticateToken, (req, res) => {
                 console.error('[DB] Error saving trigger:', err.message);
                 return res.status(500).json({ error: 'Database save failed' });
             }
-            res.json({ success: true, message: 'Trigger saved' });
+            res.json({ success: true, message: 'Trigger saved', triggerId: this.lastID });
         }
     );
 });
 
+
+// Delete a battery trigger
 app.delete('/espcontrol/api/battery-triggers/:triggerId', authenticateToken, (req, res) => {
     const userId = req.user.id;
     const triggerId = req.params.triggerId;
@@ -654,8 +609,6 @@ app.delete('/espcontrol/api/battery-triggers/:triggerId', authenticateToken, (re
         }
     );
 });
-
-
 
 // Start the server
 server.listen(port, () => {
