@@ -191,6 +191,15 @@ async function loadSchedule() {
     }
 }
 
+async function setIntegrationActive(integrationId, isActive) {
+    try {
+        await fetchData(`/espcontrol/api/integrations/${integrationId}/active`, 'POST', { isActive });
+        console.log(`[CLIENT] Set integration ${integrationId} active: ${isActive}`);
+    } catch (error) {
+        console.warn(`Failed to set integration ${integrationId} active status:`, error.message);
+    }
+}
+
 // --- Device List Loading ---
 async function loadDevices() {
     try {
@@ -267,32 +276,35 @@ async function loadIntegrations() {
         const integrations = await fetchData('/espcontrol/api/integrations');
         integrationListUl.innerHTML = ''; // Clear loading
 
+        window.activeIntegrationIds = []; // ✅ Reset tracked list
+
         if (integrations.length === 0) {
             integrationListUl.innerHTML = '<li>No integrations added yet.</li>';
         } else {
             for (const integration of integrations) {
+                if (integration.integration_type === 'Growatt') {
+                    setIntegrationActive(integration.id, true);              // ✅ Mark active in DB
+                    window.activeIntegrationIds.push(integration.id);        // ✅ Track for unload
+                }
+
                 const li = document.createElement('li');
                 li.className = 'integration-item';
                 li.innerHTML = `<strong>${integration.name}</strong> (${integration.integration_type})`;
 
-                // Add a "View Details" button for each integration
                 const detailsBtn = document.createElement('button');
                 detailsBtn.textContent = 'View Details';
                 detailsBtn.onclick = () => renderIntegrationDetails(integration, li);
                 li.appendChild(detailsBtn);
-
                 integrationListUl.appendChild(li);
 
-                // If it's a Growatt integration, fetch its specific data for the combined table
                 if (integration.integration_type === 'Growatt') {
                     try {
-                        const growattData = await fetchData(`/espcontrol/api/integrations/growatt/${integration.id}/data`);
-                        if (growattData.inverters && Array.isArray(growattData.inverters)) {
-                            allGrowattInverters = allGrowattInverters.concat(growattData.inverters);
+                        const data = await fetchData(`/espcontrol/api/growatt/data/${integration.id}`);
+                        if (data.inverters && Array.isArray(data.inverters)) {
+                            allGrowattInverters = allGrowattInverters.concat(data.inverters);
                         }
                     } catch (growattError) {
                         console.error(`Error fetching data for Growatt integration ${integration.id}:`, growattError);
-                        // Append error message to the specific integration list item
                         const errorSpan = document.createElement('span');
                         errorSpan.style.color = 'red';
                         errorSpan.textContent = ` - Error: ${growattError.message}`;
@@ -301,6 +313,7 @@ async function loadIntegrations() {
                 }
             }
         }
+
         // After fetching all integrations and their Growatt data, display them
         displayGrowattInvertersTable(allGrowattInverters);
 
@@ -638,3 +651,15 @@ function logoutClientAndServer() {
 
     window.location.href = '/espcontrol/logout';
 }
+
+window.addEventListener('beforeunload', () => {
+    if (window.activeIntegrationIds && Array.isArray(window.activeIntegrationIds)) {
+        window.activeIntegrationIds.forEach(id => {
+            const data = new Blob(
+                [JSON.stringify({ isActive: false })],
+                { type: 'application/json' }
+            );
+            navigator.sendBeacon(`/espcontrol/api/integrations/${id}/active`, data);
+        });
+    }
+});

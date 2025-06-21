@@ -39,7 +39,6 @@ app.get('/espcontrol/device', (req, res) => {
 // ✅ NEW: Import the Growatt Integration module
 const GrowattIntegration = require('./integrations/growatt');
 
-
 // Secret key for JWTs (use a strong, environment variable in production)
 const JWT_SECRET = process.env.JWT_SECRET || 'your_super_secret_jwt_key'; // Make sure this is defined
 
@@ -134,7 +133,10 @@ app.get('/espcontrol/logout', (req, res) => {
 // Device management API endpoints
 app.get('/espcontrol/api/devices', authenticateToken, (req, res) => {
     const userId = req.user.id;
-    db.all('SELECT id, device_name FROM devices WHERE user_id = ?', [userId], (err, rows) => {
+    db.all(
+    'SELECT id, settings_json FROM integrations WHERE integration_type = ? AND (is_active IS NULL OR is_active = 0)',
+    ['Growatt'],
+    async (err, rows) => {
         if (err) {
             console.error('[DB] Error fetching devices:', err.message);
             return res.status(500).json({ error: 'Database error fetching devices' });
@@ -320,13 +322,33 @@ app.post('/espcontrol/api/integrations', authenticateToken, (req, res) => {
     db.run(
         'INSERT INTO integrations (user_id, name, integration_type, settings_json) VALUES (?, ?, ?, ?)',
         [userId, name, integration_type, settingsJson],
-        function (err) {
+        // START OF NEW CODE INSERTION
+        async function(err) {
             if (err) {
                 console.error('[DB] Error adding integration:', err.message);
                 return res.status(500).json({ error: 'Database error adding integration' });
             }
-            res.status(201).json({ message: 'Integration added successfully', id: this.lastID });
+            console.log(`[API] Integration added for user ${userId}, ID: ${this.lastID}`);
+
+            // NEW: Immediately fetch data for the new integration if it's a Growatt integration
+            if (integration_type === 'Growatt') { // Only attempt Growatt-specific fetch if type matches
+                try {
+                    // Use this.lastID for the newly created integration's ID
+                    const growattIntegration = GrowattIntegration.getInstance(db, this.lastID, settings);
+                    await growattIntegration.fetchData(); // This will populate lastFetchedData
+                    console.log(`[API] Initial Growatt data fetched for new integration ${this.lastID}.`);
+                    res.status(201).json({ message: 'Growatt integration added and initial data fetched successfully!', integrationId: this.lastID });
+                } catch (fetchError) {
+                    console.error(`[API] Error during initial Growatt data fetch for new integration ${this.lastID}:`, fetchError.message);
+                    // Even if initial fetch fails, the integration itself was added.
+                    res.status(201).json({ message: `Growatt integration added, but initial data fetch failed: ${fetchError.message}`, integrationId: this.lastID });
+                }
+            } else {
+                // For non-Growatt integrations, just send the success response
+                res.status(201).json({ message: 'Integration added successfully', id: this.lastID });
+            }
         }
+        // END OF NEW CODE INSERTION
     );
 });
 
@@ -376,11 +398,14 @@ app.put('/espcontrol/api/integrations/:id', authenticateToken, (req, res) => {
 });
 
 
-// NEW: Endpoint to fetch Growatt data for a specific integration
-app.get('/espcontrol/api/integrations/growatt/:integrationId/data', authenticateToken, async (req, res) => {
+app.get('/espcontrol/api/growatt/data/:integrationId', authenticateToken, (req, res) => {
     const integrationId = req.params.integrationId;
     const userId = req.user.id;
+    // Set a threshold for how "fresh" the cached data needs to be for a client-requested pull
+    // If client pulls every 30s, this should be slightly less to ensure a fresh fetch.
+    const CLIENT_CACHE_FRESHNESS_THRESHOLD_MS = 25 * 1000; // 25 seconds
 
+    // First, verify the integration belongs to the user
     db.get('SELECT settings_json FROM integrations WHERE id = ? AND user_id = ? AND integration_type = ?',
         [integrationId, userId, 'Growatt'],
         async (err, row) => {
@@ -394,21 +419,78 @@ app.get('/espcontrol/api/integrations/growatt/:integrationId/data', authenticate
 
             try {
                 const settings = JSON.parse(row.settings_json);
-                // Create an instance of GrowattIntegration using the retrieved settings
                 const growattIntegration = GrowattIntegration.getInstance(db, integrationId, settings);
-                const data = await growattIntegration.fetchData(); // This should return the inverterSummaries and allRawPlantData
-                res.json(data);
+
+                const currentTime = Date.now();
+                // Check if cached data is available AND sufficiently fresh for a logged-in user's request
+                if (growattIntegration.lastFetchedData &&
+                    (currentTime - growattIntegration.lastFetchedData.timestamp < CLIENT_CACHE_FRESHNESS_THRESHOLD_MS)) {
+                    console.log(`[API] Serving fresh cached Growatt data for integration ${integrationId}, fetched at ${new Date(growattIntegration.lastFetchedData.timestamp).toLocaleTimeString()}`);
+                    res.json(growattIntegration.lastFetchedData.data);
+                } else {
+                    // Cache is old, non-existent, or it's time for a refresh for this client request.
+                    console.log(`[API] Cached Growatt data for integration ${integrationId} is stale or missing, performing immediate fetch.`);
+                    const data = await growattIntegration.fetchData(); // This will refresh the instance's cache too
+                    res.json(data);
+                }
             } catch (error) {
-                console.error(`[API] Error fetching Growatt data for integration ${integrationId}:`, error.message);
-                res.status(500).json({ error: 'Failed to fetch Growatt data', details: error.message });
+                console.error(`[API] Error retrieving Growatt data for integration ${integrationId}:`, error.message);
+                res.status(500).json({ error: 'Failed to retrieve Growatt data', details: error.message });
             }
         }
     );
 });
 
 
+async function refreshAllGrowattIntegrations() {
+    console.log('[CRON] Starting scheduled Growatt data refresh for all integrations...');
+    db.all('SELECT id, settings_json FROM integrations WHERE integration_type = ?', ['Growatt'], async (err, rows) => {
+        if (err) {
+            console.error('[CRON] Error fetching Growatt integrations for refresh:', err.message);
+            return;
+        }
+
+        for (const row of rows) {
+            try {
+                const settings = JSON.parse(row.settings_json);
+                const growattIntegration = GrowattIntegration.getInstance(db, row.id, settings);
+                await growattIntegration.fetchData(); // This will update the cached data within the instance
+                console.log(`[CRON] Successfully refreshed data for Growatt integration ID: ${row.id}`);
+            } catch (error) {
+                console.error(`[CRON] Failed to refresh data for Growatt integration ID: ${row.id}:`, error.message);
+            }
+        }
+        console.log('[CRON] Finished scheduled Growatt data refresh.');
+    });
+}
+
+app.post('/espcontrol/api/integrations/:id/active', authenticateToken, (req, res) => {
+    const integrationId = req.params.id;
+    const userId = req.user.id;
+    const isActive = req.body.isActive ? 1 : 0;
+
+    db.run(
+        'UPDATE integrations SET is_active = ? WHERE id = ? AND user_id = ?',
+        [isActive, integrationId, userId],
+        function (err) {
+            if (err) {
+                console.error('[DB] Error updating integration active status:', err.message);
+                return res.status(500).json({ error: 'Database error updating integration activity' });
+            }
+            res.json({ message: `Integration ${integrationId} activity updated to ${isActive}` });
+        }
+    );
+});
+
 // Start the server
 server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/espcontrol/`);
     console.log('Ensure your ESP8266 devices are configured to connect to this server.');
+    refreshAllGrowattIntegrations();
+});
+
+// NEW: Schedule Growatt data refresh every 5 minutes (300 seconds)
+// This will run at minute 0, 5, 10, etc.
+cron.schedule('*/5 * * * *', () => {
+    refreshAllGrowattIntegrations();
 });

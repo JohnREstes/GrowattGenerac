@@ -14,6 +14,8 @@ class GrowattIntegration {
 
         this.settings.plantId = this.settings.plantId || null;
         this.settings.deviceSerialNumbers = this.settings.deviceSerialNumbers || [];
+
+        this.lastFetchedData = null;
     }
 
     static getInstance(db, integrationId, settings) {
@@ -106,7 +108,14 @@ class GrowattIntegration {
                 }
             }
 
+            this.lastFetchedData = {
+                timestamp: Date.now(), // Store the time data was fetched
+                data: relevantData     // Store the actual data
+            };
+            console.log(`[GrowattIntegration-${this.integrationId}] Data fetched and cached at ${new Date(this.lastFetchedData.timestamp).toISOString()}`);
+            
             return relevantData;
+
         } catch (error) {
             this.isLoggedIn = false;
             console.error(`[GrowattIntegration-${this.integrationId}] Error fetching data:`, error);
