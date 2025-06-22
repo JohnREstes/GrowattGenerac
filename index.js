@@ -488,35 +488,53 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
         JOIN devices d ON bt.device_id = d.id
         WHERE bt.user_id = ? AND bt.is_enabled = 1
     `, [userId], (err, rows) => {
-        if (err) return console.error('[TRIGGER] Failed to load triggers:', err.message);
+        if (err) {
+            console.error('[TRIGGER] Failed to load triggers:', err.message);
+            return;
+        }
+
+        if (rows.length === 0) {
+            console.log(`[TRIGGER] No enabled battery triggers found for user ${userId}`);
+            return;
+        }
 
         rows.forEach(trigger => {
             const match = growattInverters.find(inv => inv.deviceSn === trigger.inverter_id);
-            if (!match) return;
+            if (!match) {
+                console.warn(`[TRIGGER] No matching inverter for trigger: inverter_id ${trigger.inverter_id}`);
+                return;
+            }
 
             const metricValue = trigger.metric === 'voltage'
                 ? parseFloat(match.batteryVoltage)
                 : parseFloat(match.batterySoc);
 
-            if (isNaN(metricValue)) return;
+            if (isNaN(metricValue)) {
+                console.warn(`[TRIGGER] Invalid metric value for device ${trigger.device_id}: ${trigger.metric}`);
+                return;
+            }
 
             const currentState = (deviceStates[trigger.device_id] || '').toLowerCase();
 
-            console.log(`[TRIGGER] Device ${trigger.device_id} — ${trigger.metric}: ${metricValue}, ON < ${trigger.turn_on_below}, OFF > ${trigger.turn_off_above}, Current State: ${currentState}`);
+            console.log(`[TRIGGER] Evaluating Device ${trigger.device_id}`);
+            console.log(`  ↪ Metric: ${trigger.metric}`);
+            console.log(`  ↪ Value: ${metricValue}`);
+            console.log(`  ↪ Turn ON Below: ${trigger.turn_on_below}`);
+            console.log(`  ↪ Turn OFF Above: ${trigger.turn_off_above}`);
+            console.log(`  ↪ Current State: ${currentState}`);
 
             if (metricValue < trigger.turn_on_below && currentState !== 'on') {
-                console.log(`[TRIGGER] Turning ON device ${trigger.device_id} (metric ${metricValue} < ${trigger.turn_on_below})`);
+                console.log(`[GPIO] Turning ON device ${trigger.device_id} (value ${metricValue} < ${trigger.turn_on_below})`);
                 toggleDevice(trigger.device_id, 'on');
-            }
-
-            if (metricValue > trigger.turn_off_above && currentState !== 'off') {
-                console.log(`[TRIGGER] Turning OFF device ${trigger.device_id} (metric ${metricValue} > ${trigger.turn_off_above})`);
+            } else if (metricValue > trigger.turn_off_above && currentState !== 'off') {
+                console.log(`[GPIO] Turning OFF device ${trigger.device_id} (value ${metricValue} > ${trigger.turn_off_above})`);
                 toggleDevice(trigger.device_id, 'off');
+            } else {
+                console.log(`[GPIO] No action for device ${trigger.device_id} (value ${metricValue})`);
             }
         });
     });
 }
-
 
 app.post('/espcontrol/api/integrations/:id/active', authenticateToken, (req, res) => {
     const integrationId = req.params.id;
@@ -622,6 +640,6 @@ server.listen(port, () => {
 
 // NEW: Schedule Growatt data refresh every 5 minutes (300 seconds)
 // This will run at minute 0, 5, 10, etc.
-cron.schedule('*/5 * * * *', () => {
+cron.schedule('* * * * *', () => {
     refreshAllGrowattIntegrations();
 });
