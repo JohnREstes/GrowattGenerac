@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Generator Control</title>
+  <link rel="stylesheet" href="generator.css"/>
+  <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <header>
+    <h1>🔌 Generator Control Panel</h1>
+    <p id="status">Loading...</p>
+    <button onclick="logoutClientAndServer()">Logout</button>
+  </header>
+
+  <main>
+    <!-- Inverter Data Section -->
+    <section id="growattIntegrationSection">
+      <h2>
+        <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('growattIntegrationSection')"></i>
+        Growatt Inverters
+      </h2>
+      <div class="section-content">
+        <button id="openGrowattModalBtn">+ Add Growatt Integration</button>
+        <div id="growattDataStatus"></div>
+        <ul id="integrationList"></ul>
+        <table id="growattInverterDataTable" style="display:none;">
+          <thead>
+            <tr>
+              <th>Inverter ID</th>
+              <th>Plant Name</th>
+              <th>Battery Voltage</th>
+              <th>Battery %</th>
+              <th>AC In</th>
+              <th>AC Out</th>
+              <th>Solar Power</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Generator Selection -->
+    <section>
+      <label for="deviceSelect"><strong>Select Generator:</strong></label>
+      <select id="deviceSelect"></select>
+    </section>
+
+    <!-- Toggle Generator -->
+    <section>
+      <label><strong>Power:</strong></label>
+      <input type="checkbox" id="pinToggle" onchange="togglePin()"/>
+    </section>
+
+    <!-- Schedule Section -->
+    <section id="scheduleSection">
+      <h2>
+        <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('scheduleSection')"></i>
+        Schedule On/Off
+      </h2>
+      <div class="section-content">
+        <label for="timezone">Timezone:</label>
+        <input type="text" id="timezone" placeholder="e.g., America/Cancun"/>
+
+        <div id="events"></div>
+        <button onclick="addEvent()">Add Event</button>
+        <button onclick="saveSchedule()">Save Schedule</button>
+        <p id="saveStatus"></p>
+      </div>
+    </section>
+
+    <!-- Battery Triggers -->
+    <section id="batteryTriggerSection">
+      <h2>
+        <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('batteryTriggerSection')"></i>
+        Battery-Based Triggers
+      </h2>
+      <div class="section-content">
+        <label for="inverterId">Inverter:</label>
+        <select id="inverterId"></select>
+
+        <label for="metric">Metric:</label>
+        <select id="metric">
+          <option value="batteryVoltage">Battery Voltage</option>
+          <option value="batteryPercentage">Battery %</option>
+        </select>
+
+        <label for="turnOnBelow">Turn ON Below:</label>
+        <input type="number" id="turnOnBelow" step="0.1"/>
+
+        <label for="turnOffAbove">Turn OFF Above:</label>
+        <input type="number" id="turnOffAbove" step="0.1"/>
+
+        <button onclick="saveBatteryTrigger()">Save Trigger</button>
+        <div id="batteryTriggersContainer"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Growatt Modal -->
+  <div id="growattIntegrationModal" class="modal">
+    <div class="modal-content">
+      <span class="close-button">&times;</span>
+      <h2>Add Growatt Integration</h2>
+      <form id="growattIntegrationForm">
+        <input type="text" name="name" placeholder="Integration Name" required/>
+        <input type="text" name="username" placeholder="Growatt Username" required/>
+        <input type="password" name="password" placeholder="Password" required/>
+        <input type="text" name="server" placeholder="server-us.growatt.com" required/>
+        <input type="text" name="plantId" placeholder="Plant ID (optional)"/>
+        <input type="text" name="deviceSerialNumbers" placeholder="Serials (comma-separated)"/>
+        <button type="submit">Add Integration</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
