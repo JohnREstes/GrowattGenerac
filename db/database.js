@@ -32,16 +32,28 @@ const db = new sqlite3.Database(dbPath, (err) => {
         )
       `);
 
-      // Schedules
+      // Legacy schedule_events (optional, can remove if unused)
+      db.run(`
+        CREATE TABLE IF NOT EXISTS schedule_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          device_id INTEGER NOT NULL,
+          timezone TEXT NOT NULL,
+          on_time TEXT NOT NULL,
+          off_time TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (device_id) REFERENCES devices(id)
+        )
+      `);
+
+      // ✅ Schedules (used in current index.js routes)
       db.run(`
         CREATE TABLE IF NOT EXISTS schedules (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          device_id INTEGER NOT NULL,
+          device_id TEXT NOT NULL,
           user_id INTEGER NOT NULL,
           timezone TEXT NOT NULL,
           events_json TEXT NOT NULL,
-          FOREIGN KEY (device_id) REFERENCES devices(id),
-          FOREIGN KEY (user_id) REFERENCES users(id)
+          PRIMARY KEY (device_id, user_id)
         )
       `);
 
@@ -66,7 +78,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
           user_id INTEGER NOT NULL,
           device_id INTEGER NOT NULL,
           inverter_id TEXT NOT NULL,
-          metric TEXT NOT NULL, -- 'voltage' or 'percentage'
+          metric TEXT NOT NULL,
           turn_on_below REAL NOT NULL,
           turn_off_above REAL NOT NULL,
           is_enabled INTEGER DEFAULT 1,
@@ -75,18 +87,18 @@ const db = new sqlite3.Database(dbPath, (err) => {
         )
       `);
 
-      // Unique index to support upsert logic
+      // Unique index for trigger upsert logic
       db.run(`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_battery_trigger_per_device
-        ON battery_triggers (user_id, device_id)
+        ON battery_triggers (user_id, device_id, inverter_id, metric)
       `);
 
-      // Create default user and device (dev only — remove later!)
+      // Create default user + device
       db.get(`SELECT COUNT(*) as count FROM users`, (err, row) => {
         if (err) return console.error('[DB] Error checking for default user:', err.message);
         if (row.count === 0) {
           const username = 'admin';
-          const password = 'password123'; // ⚠️ Change this before production
+          const password = 'password123'; // ⚠️ Change in production
           bcrypt.hash(password, 10, (err, hash) => {
             if (err) return console.error('[DB] Error hashing password:', err.message);
             db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hash], function (err) {

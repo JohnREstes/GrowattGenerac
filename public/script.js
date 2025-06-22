@@ -150,6 +150,7 @@ async function saveSchedule() {
 
     try {
         const data = await fetchData(`/espcontrol/api/schedule/${deviceId}`, 'POST', { timezone, events });
+        console.log('[DEBUG] Saving schedule for device', deviceId, 'with events:', events);
         statusMessage.textContent = data.message;
         statusMessage.style.color = 'green';
     } catch (error) {
