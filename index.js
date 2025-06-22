@@ -459,6 +459,7 @@ async function refreshAllGrowattIntegrations() {
                 const settings = JSON.parse(row.settings_json);
                 const growattIntegration = GrowattIntegration.getInstance(db, row.id, settings);
                 const data = await growattIntegration.fetchData(); // returns fresh Growatt data
+                console.log(`[CRON] Growatt inverters for user ${row.user_id}:`, data.inverters.map(i => i.deviceSn));
 
                 if (data && data.inverters) {
                     cache.growatt[row.id] = {
