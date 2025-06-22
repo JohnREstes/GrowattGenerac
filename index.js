@@ -499,7 +499,8 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
 
             if (isNaN(metricValue)) return;
 
-            const currentState = deviceStates[trigger.device_id]?.state || 'unknown';
+            const currentState = (deviceStates[trigger.device_id] || '').toLowerCase();
+            console.log(`[TRIGGER] Device ${trigger.device_id} — ${trigger.metric}: ${metricValue}, ON < ${trigger.turn_on_below}, OFF > ${trigger.turn_off_above}, Current State: ${currentState}`);
 
             if (metricValue < trigger.turn_on_below && currentState !== 'on') {
                 console.log(`[TRIGGER] Turning ON device ${trigger.device_id} (metric ${metricValue} < ${trigger.turn_on_below})`);
