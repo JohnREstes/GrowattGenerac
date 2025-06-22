@@ -326,6 +326,7 @@ async function loadDevices() {
             document.getElementById('status').innerText = 'Fetching state...';
             startPolling();
             loadSchedule();
+            loadBatteryTriggers(); 
         }
 
         select.addEventListener('change', () => {
@@ -338,6 +339,7 @@ async function loadDevices() {
             document.getElementById('status').innerText = 'Fetching state...';
             startPolling();
             loadSchedule();
+            loadBatteryTriggers(); 
         });
     } catch (error) {
         document.getElementById('status').innerText = `Error loading devices: ${error.message}`;
