@@ -467,6 +467,7 @@ async function refreshAllGrowattIntegrations() {
                     };
 
                     // 🧠 Check trigger rules right after caching new data
+                    console.log(`[CRON] Applying battery triggers for user ${row.user_id} with ${data.inverters.length} inverter(s)`);
                     applyBatteryTriggersForUser(row.user_id, data.inverters);
                 }
 
@@ -500,6 +501,7 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
             if (isNaN(metricValue)) return;
 
             const currentState = (deviceStates[trigger.device_id] || '').toLowerCase();
+
             console.log(`[TRIGGER] Device ${trigger.device_id} — ${trigger.metric}: ${metricValue}, ON < ${trigger.turn_on_below}, OFF > ${trigger.turn_off_above}, Current State: ${currentState}`);
 
             if (metricValue < trigger.turn_on_below && currentState !== 'on') {
