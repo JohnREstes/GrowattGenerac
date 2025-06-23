@@ -191,6 +191,21 @@ app.post('/espcontrol/control', authenticateToken, (req, res) => {
     });
 });
 
+function toggleDevice(deviceId, newState) {
+    const currentState = (deviceStates[deviceId] || '').toLowerCase();
+    const desiredState = newState.toLowerCase();
+
+    if (currentState === desiredState) {
+        console.log(`[GPIO] Device ${deviceId} is already ${desiredState.toUpperCase()}, no change made.`);
+        return;
+    }
+
+    deviceStates[deviceId] = desiredState;
+    console.log(`[GPIO] Toggled device ${deviceId} to ${desiredState.toUpperCase()}`);
+
+    // 🧠 Optional: add real ESP communication here
+    // Example: send a request to the ESP endpoint to toggle GPIO pin
+}
 
 // Schedule API endpoints
 app.get('/espcontrol/api/schedule/:deviceId', authenticateToken, (req, res) => {
@@ -641,6 +656,6 @@ server.listen(port, () => {
 
 // NEW: Schedule Growatt data refresh every 5 minutes (300 seconds)
 // This will run at minute 0, 5, 10, etc.
-cron.schedule('*/3 * * * *', () => {
+cron.schedule('* * * * *', () => {
     refreshAllGrowattIntegrations();
 });
