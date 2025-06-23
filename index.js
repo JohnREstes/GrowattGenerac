@@ -459,7 +459,7 @@ async function refreshAllGrowattIntegrations() {
                 const settings = JSON.parse(row.settings_json);
                 const growattIntegration = GrowattIntegration.getInstance(db, row.id, settings);
                 const data = await growattIntegration.fetchData(); // returns fresh Growatt data
-                console.log(`[CRON] Growatt inverters for user ${row.user_id}:`, data.inverters.map(i => i.deviceSn));
+                console.log(`[CRON] Full Growatt inverter objects for user ${row.user_id}:`, data.inverters);
 
                 if (data && data.inverters) {
                     cache.growatt[row.id] = {
@@ -500,7 +500,7 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
         }
 
         rows.forEach(trigger => {
-            const match = growattInverters.find(inv => inv.deviceSn === trigger.inverter_id);
+            const match = growattInverters.find(inv => inv.inverterId === trigger.inverter_id);
             if (!match) {
                 console.warn(`[TRIGGER] No matching inverter for trigger: inverter_id ${trigger.inverter_id}`);
                 return;
@@ -641,6 +641,6 @@ server.listen(port, () => {
 
 // NEW: Schedule Growatt data refresh every 5 minutes (300 seconds)
 // This will run at minute 0, 5, 10, etc.
-cron.schedule('* * * * *', () => {
+cron.schedule('*/3 * * * *', () => {
     refreshAllGrowattIntegrations();
 });
