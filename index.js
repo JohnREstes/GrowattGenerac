@@ -203,8 +203,6 @@ function toggleDevice(deviceId, newState) {
     deviceStates[deviceId] = desiredState;
     console.log(`[GPIO] Toggled device ${deviceId} to ${desiredState.toUpperCase()}`);
 
-    // 🧠 Optional: add real ESP communication here
-    // Example: send a request to the ESP endpoint to toggle GPIO pin
 }
 
 // Schedule API endpoints
@@ -530,7 +528,7 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
                 return;
             }
 
-            const currentState = (deviceStates[trigger.device_id] || '').toLowerCase();
+            const currentState = (deviceStates[trigger.device_id] || '').toUpperCase();
 
             console.log(`[TRIGGER] Evaluating Device ${trigger.device_id}`);
             console.log(`  ↪ Metric: ${trigger.metric}`);
