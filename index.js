@@ -541,10 +541,10 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
 
             if (metricValue < trigger.turn_on_below && currentState !== 'on') {
                 console.log(`[GPIO] Turning ON device ${trigger.device_id} (value ${metricValue} < ${trigger.turn_on_below})`);
-                toggleDevice(trigger.device_id, 'on');
+                toggleDevice(trigger.device_id, 'ON');
             } else if (metricValue > trigger.turn_off_above && currentState !== 'off') {
                 console.log(`[GPIO] Turning OFF device ${trigger.device_id} (value ${metricValue} > ${trigger.turn_off_above})`);
-                toggleDevice(trigger.device_id, 'off');
+                toggleDevice(trigger.device_id, 'OFF');
             } else {
                 console.log(`[GPIO] No action for device ${trigger.device_id} (value ${metricValue})`);
             }
