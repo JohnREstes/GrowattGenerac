@@ -539,10 +539,10 @@ function applyBatteryTriggersForUser(userId, growattInverters) {
             console.log(`  ↪ Turn OFF Above: ${trigger.turn_off_above}`);
             console.log(`  ↪ Current State: ${currentState}`);
 
-            if (metricValue < trigger.turn_on_below && currentState !== 'on') {
+            if (metricValue < trigger.turn_on_below && currentState !== 'ON') {
                 console.log(`[GPIO] Turning ON device ${trigger.device_id} (value ${metricValue} < ${trigger.turn_on_below})`);
                 toggleDevice(trigger.device_id, 'ON');
-            } else if (metricValue > trigger.turn_off_above && currentState !== 'off') {
+            } else if (metricValue > trigger.turn_off_above && currentState !== 'OFF') {
                 console.log(`[GPIO] Turning OFF device ${trigger.device_id} (value ${metricValue} > ${trigger.turn_off_above})`);
                 toggleDevice(trigger.device_id, 'OFF');
             } else {
