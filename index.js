@@ -192,18 +192,18 @@ app.post('/espcontrol/control', authenticateToken, (req, res) => {
 });
 
 function toggleDevice(deviceId, newState) {
-    const currentState = (deviceStates[deviceId] || '').toLowerCase();
-    const desiredState = newState.toLowerCase();
+    const desiredState = newState.toUpperCase();
+    const currentState = (deviceStates[deviceId] || '').toUpperCase();
 
     if (currentState === desiredState) {
-        console.log(`[GPIO] Device ${deviceId} is already ${desiredState.toUpperCase()}, no change made.`);
+        console.log(`[GPIO] Device ${deviceId} is already ${desiredState}, no change made.`);
         return;
     }
 
     deviceStates[deviceId] = desiredState;
-    console.log(`[GPIO] Toggled device ${deviceId} to ${desiredState.toUpperCase()}`);
-
+    console.log(`[GPIO] Toggled device ${deviceId} to ${desiredState}`);
 }
+
 
 // Schedule API endpoints
 app.get('/espcontrol/api/schedule/:deviceId', authenticateToken, (req, res) => {
