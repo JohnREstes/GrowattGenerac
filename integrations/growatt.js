@@ -7,11 +7,15 @@ class GrowattIntegration {
         this.integrationId = integrationId;
         this.settings = settings;
 
-        this.growatt = new Growatt({});
+        // ✅ UPDATED: Initialize Growatt API client with the server in the constructor
+        this.growatt = new Growatt({
+            server: this.settings.server || 'https://server.growatt.com'
+        });
         this.isLoggedIn = false;
         this.lastLoginTime = 0;
         this.loginTimeout = 24 * 60 * 60 * 1000;
 
+        // Ensure settings have default properties if not present
         this.settings.plantId = this.settings.plantId || null;
         this.settings.deviceSerialNumbers = this.settings.deviceSerialNumbers || [];
 
@@ -37,7 +41,8 @@ class GrowattIntegration {
 
         try {
             console.log(`[GrowattIntegration-${this.integrationId}] Attempting login to Growatt server: ${this.settings.server}`);
-            await this.growatt.login(this.settings.username, this.settings.password, this.settings.server);
+            // ✅ UPDATED: Call login without the server parameter since it's in the constructor
+            await this.growatt.login(this.settings.username, this.settings.password);
             this.isLoggedIn = true;
             this.lastLoginTime = currentTime;
             console.log(`[GrowattIntegration-${this.integrationId}] Growatt login successful.`);
@@ -67,6 +72,9 @@ class GrowattIntegration {
         try {
             const allPlantData = await this.growatt.getAllPlantData({});
             console.log(`[GrowattIntegration-${this.integrationId}] Successfully fetched all plant data from Growatt.`);
+            
+            // ✅ ADDED: Log the full raw plant data to inspect the structure
+            console.log(`[GrowattIntegration-${this.integrationId}] RAW allPlantData:`, JSON.stringify(allPlantData, null, 2));
 
             const relevantData = { allRawPlantData: allPlantData };
             const inverterSummaries = [];
@@ -76,11 +84,22 @@ class GrowattIntegration {
                 const devices = plant.devices || {};
 
                 for (const deviceId in devices) {
-                    const status = devices[deviceId]?.statusData || {};
+                    const device = devices[deviceId];
+                    // ✅ ADDED: Log the full raw device data
+                    console.log(`[GrowattIntegration-${this.integrationId}] RAW device data for ${deviceId}:`, JSON.stringify(device, null, 2));
+
+                    const status = device?.statusData || {};
+                    const totalData = device?.totalData || {};
+                    
+                    // The previous logs from your server showed '{}', this will now show the full object
+                    console.log(`[GrowattIntegration-${this.integrationId}] Extracted statusData:`, status);
+                    console.log(`[GrowattIntegration-${this.integrationId}] Extracted totalData:`, totalData);
+
                     inverterSummaries.push({
                         plantName: plant.plantName,
                         inverterId: deviceId,
                         batteryVoltage: status.vBat || 'N/A',
+                        batteryPower: (-1 * status.batPower) || 'N/A',
                         batteryPercentage: status.capacity || 'N/A',
                         acInputPower: status.gridPower || 'N/A',
                         acOutputPower: status.loadPower || 'N/A',

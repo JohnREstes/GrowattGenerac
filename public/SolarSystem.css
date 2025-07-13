@@ -1,0 +1,468 @@
+/* styles.css */
+:root {
+    --bg-color: #f8f9fa;
+    --text-color: #121212;
+    --box-button: #f8f9fa;
+    --box-border: #ccc;
+    --dark-icon: #04001b;
+}
+
+.dark-mode{
+    --bg-color: #121212;
+    --text-color: #f8f9fa;
+    --box-button: #323232;
+    --box-border: #505050;
+    --dark-icon: #fffeb8;
+}
+
+.light-mode{
+    --bg-color: #f8f9fa;
+    --text-color: #121212;
+    --box-button: #f8f9fa;
+    --box-border: #ccc;
+    --dark-icon: #04001b;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    transition: background-color 0.3s, color 0.3s;
+    font-family: Arial, sans-serif;
+    font-size: clamp(.5rem, .9rem, 1.5rem);
+    height: 100dvh;
+    width: 100dvw;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    position: relative;
+    display: block;
+    flex-direction: column;
+}
+
+.header-container {
+    display: flex;
+    justify-content: space-around; /* Distributes space evenly around items */
+    align-items: center; /* Vertically aligns items in the center */
+    max-width: 600px; /* Sets the maximum width of the container */
+    margin: 0 auto; /* Centers the container horizontally */
+    width: 100%; /* Allows the container to be responsive */
+    height: max-content;
+    padding: 3px;
+    box-sizing: border-box; /* Ensures padding and border are included in the element's total width and height */
+}
+
+header {
+    width: 100%;
+    height: max-content;
+    position: relative;
+    left: 0;
+    top: 0;
+    font-weight: 700;
+}
+
+header span {
+    /* Optional: Add some styling to the spans if needed */
+    padding: 0 10px; /* Adjust spacing around each item */
+    text-align: center;
+}
+main{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
+    width: 100%;
+    height: max-content;
+    padding-bottom: 20px;
+}
+i {
+    padding: 0 5px 0 5px
+}
+
+.container{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+}
+
+.title{
+    font-weight: 700;
+    text-align: right;
+}
+
+.loginContainer{
+    position: absolute;
+    background-color: var(--bg-color);
+    left: 0;
+    top:0;
+    height: 100%;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    display: none;
+    z-index: 10;
+    transition: background-color 0.3s, color 0.3s;
+}
+.loginForm{
+    background-color: rgb(116, 179, 233);
+    padding: 10px;
+    width: max-content;
+    height: max-content;
+    z-index: 11;
+}
+input{
+    margin: 5px;
+}
+.buttonCenter{
+    display: flex;
+    justify-content: center;
+}
+#loginButton{
+    padding: 5px;
+    font-size: clamp(.5rem, 1.1rem, 2rem);
+    margin-top: 15px;
+}
+
+.loadingGraphic{
+    position: absolute;
+    width: 100dvw;
+    height: 100dvh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 5;
+}
+#loading{
+    height: 100px;
+    width: 100px;
+}
+.none{
+    display: none;
+}
+
+.container-output {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    max-width: 600px;
+    z-index: 2;
+}
+.container-output p {
+    margin: 16px 0; /* Adjust the margin as needed */
+}
+
+.box {
+    background-color: var(--box-button);
+    position: relative;
+    border: 1px solid var(--box-border);
+    padding: 10px;
+    text-align: center;
+    border-radius: 10px;
+    overflow: hidden;
+    max-height: 60px; /* Limit height to show only 3 lines */
+    transition: max-height 0.3s ease;
+    transition: background-color 0.3s, color 0.3s;
+}
+.box.expanded {
+    max-height: 1000px; /* Large enough to show all content */
+}
+.button_div{
+    position: absolute;
+    top: -15px;
+    right: 5px;
+}
+.button_space{
+    width: 150px;
+    display: flex;
+    justify-content: center;
+}
+#button_div_left{
+    justify-content: left;
+}
+#button_div_right{
+    justify-content: right;
+}
+
+.toggle-button {
+    display: block;
+    background-color: #323232;
+    color: #f8f9fa;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 2px;
+    margin: 5px;
+    cursor: pointer;
+}
+
+#toggle-all-details:focus {
+    outline: none;
+}
+#toggle-dark-mode {
+    font-size: 20px;
+    cursor: pointer;
+    color: var(--dark-icon);
+}
+
+.status {
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+}
+
+.charging {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+}
+
+.pv-charger {
+    grid-column: 3 / 4;
+    grid-row: 2 / 3;
+}
+
+#charging_discharging{
+    font-weight: 700;
+    
+}
+
+
+@media (max-width: 600px) {
+    .container-output {
+        gap: 10px;
+    }
+    
+    .box {
+        padding: 15px 2px 5px 2px
+    }
+    #powerToday{
+        margin: 8px 0;
+    }
+    .container-output p {
+        margin: 4px 0; /* Decrease the margin around paragraphs */
+    }
+
+    .container-output p span {
+        display: block; /* Ensure span starts on a new line but keeps trailing text with it */
+        margin-top: 4px; /* Add some space above the span */
+        white-space: nowrap; /* Prevent text wrapping after the span */
+    }
+    body {
+        margin: 0;
+        padding: 2px;
+    }
+}
+@media (max-width: 425px) {
+    .container-output {
+        gap: 5px;
+    }
+    .box {
+        padding: 8px 2px 5px 2px;
+        max-height: 61px; /* Limit height to show only 3 lines */
+
+    }
+    
+    #pvCharger{
+        font-size: .85rem;
+    }
+    #charging{
+        font-size: .85rem;
+    }
+}
+/* Set the Bar container */
+:root{
+    --main-color: rgb(76, 76, 76);
+    --secondary-color: rgb(138, 138, 138);
+    --background-color: rgb(211, 211, 211);
+}
+
+.bar {
+	height:5px;
+	width:200px;
+
+}
+
+/* Actual bar with stripes */	
+.bar span {
+	display:inline-block;
+	height:100%;
+	width:100%;
+	/* border:1px solid var(--secondary-color);
+	border-bottom-color: var(--main-color); */
+	background-color:rgb(211, 211, 211);
+	-webkit-box-sizing:border-box;
+	-moz-box-sizing:border-box;
+	-ms-box-sizing:border-box;
+	box-sizing:border-box;
+	background-image:
+		-webkit-linear-gradient(
+		-45deg,
+		var(--main-color) 25%,
+		transparent 25%,
+		transparent 50%,
+		var(--main-color) 50%,
+		var(--main-color) 75%,
+		transparent 75%,
+		transparent
+	);
+	background-image:
+		-moz-linear-gradient(
+		-45deg,
+		var(--main-color) 25%,
+		transparent 25%,
+		transparent 50%,
+		var(--main-color) 50%,
+		var(--main-color) 75%,
+		transparent 75%,
+		transparent
+	);
+	background-image:
+		-ms-linear-gradient(
+		-45deg,
+		var(--main-color) 25%,
+		transparent 25%,
+		transparent 50%,
+		var(--main-color) 50%,
+		var(--main-color) 75%,
+		transparent 75%,
+		transparent
+	);
+	background-image:
+		linear-gradient(
+		-45deg,
+		var(--main-color) 25%,
+		transparent 25%,
+		transparent 50%,
+		var(--main-color) 50%,
+		var(--main-color) 75%,
+		transparent 75%,
+		transparent
+	);
+	-webkit-background-size:50px 50px;
+	-moz-background-size:50px 50px;
+	-ms-background-size:50px 50px;
+	background-size:50px 50px;
+	-webkit-animation:move 2s linear infinite;
+	-moz-animation:move 2s linear infinite;
+	-ms-animation:move 2s linear infinite;
+	animation:move 2s linear infinite;
+	overflow: hidden;
+	transition: background-color 0.3s, color 0.3s;
+}
+
+.left-div span{
+    animation: none;
+}
+
+.right-div span{
+    animation: none;
+}
+
+.up-div span{
+    animation: none;
+}
+
+/*
+Animate the stripes
+*/	
+@-webkit-keyframes move{
+  0% {
+  	background-position: 0 0;
+  }
+  100% {
+  	background-position: 50px 50px;
+  }
+}	
+@-moz-keyframes move{
+  0% {
+  	background-position: 0 0;
+  }
+  100% {
+  	background-position: 50px 50px;
+  }
+}	
+@-ms-keyframes move{
+  0% {
+  	background-position: 0 0;
+  }
+  100% {
+  	background-position: 50px 50px;
+  }
+}	
+@keyframes move{
+  0% {
+  	background-position: 0 0;
+  }
+  100% {
+  	background-position: 50px 50px;
+  }
+}
+@keyframes moveb{
+    0% {
+        background-position: 50px 50px;
+    }
+    100% {
+        background-position: 0px 0px;
+    }
+  }
+
+
+.container-for-lines{
+    position: relative;
+    width: 100%;
+    height: 50px;
+    transform-origin: center;
+    z-index: -10;
+  }
+  
+  .left-div {
+    transform-origin: center;
+    position: absolute;
+    top: -15px;
+    left: -85px;
+    transform: translate(-50%, -50%);
+    width: 5px;
+    height: 150px;
+    background-color: #0f0;
+	z-index: 0;
+  }
+  
+  .up-div {
+    transform-origin: center;
+    position: absolute;
+    top: -90px;
+    left: 50%;
+    width: 5px;
+    height: 150px;
+    background-color: #00f;
+  }
+  
+  .right-div {
+    transform-origin: center;
+    position: absolute;
+    top: -20px;
+    right: -70px;
+    transform: translate(-50%, -50%);
+    width: 5px;
+    height: 150px;
+    background-color: #ff0;
+	z-index: -1;
+  }
+
+
+@media (max-width: 600px) {
+    .right-div {
+        right: -98px;;
+      }
+    
+}
+@media (max-width: 390px) {
+    .right-div {
+        right: -104px;;
+      }
+    
+}
+.highLeft{
+    top: -120px;
+}
+.highRight{
+    top: -125px;
+}

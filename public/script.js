@@ -631,6 +631,7 @@ function displayGrowattInvertersTable(inverters) {
             row.querySelector(`#${rowId}-plantName`).textContent = inv.plantName || 'N/A';
             row.querySelector(`#${rowId}-inverterId`).textContent = inv.inverterId || 'N/A';
             row.querySelector(`#${rowId}-batteryVoltage`).textContent = inv.batteryVoltage || 'N/A';
+            row.querySelector(`#${rowId}-batteryPower`).textContent = inv.batteryPower || 'N/A';
             row.querySelector(`#${rowId}-batteryPercentage`).textContent = inv.batteryPercentage || 'N/A';
             row.querySelector(`#${rowId}-acInputPower`).textContent = inv.acInputPower || 'N/A';
             row.querySelector(`#${rowId}-acOutputPower`).textContent = inv.acOutputPower || 'N/A';
@@ -644,6 +645,7 @@ function displayGrowattInvertersTable(inverters) {
                 <td id="${rowId}-plantName">${inv.plantName || 'N/A'}</td>
                 <td id="${rowId}-inverterId">${inv.inverterId || 'N/A'}</td>
                 <td id="${rowId}-batteryVoltage">${inv.batteryVoltage || 'N/A'}</td>
+                <td id="${rowId}-batteryPower">${inv.batteryPower || 'N/A'}</td>
                 <td id="${rowId}-batteryPercentage">${inv.batteryPercentage || 'N/A'}</td>
                 <td id="${rowId}-acInputPower">${inv.acInputPower || 'N/A'}</td>
                 <td id="${rowId}-acOutputPower">${inv.acOutputPower || 'N/A'}</td>

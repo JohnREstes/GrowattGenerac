@@ -1,0 +1,70 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="./SolarSystem.js" defer></script>
+    <script src="https://kit.fontawesome.com/f4c4519de4.js" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="./SolarSystem.css">
+    <title>Home Solar</title>
+</head>
+<body>
+
+
+    <main>
+        <div class="button_div">
+            <div class="button_space" id="button_div_right">
+                <i class="fa-regular fa-moon" id="toggle-dark-mode"></i>
+            </div>
+        </div>
+        <div class="container-output">
+
+            <div class="box ac-input">
+                <p><i class="fa-solid fa-plug"></i>AC Input</p>
+                <p class="inputPower">Total: <span id="inputPowerTotal"></span></p>
+            </div>
+            <div class="box status">
+                <i class="fa-regular fa-sun"></i>
+                <p id="powerToday">Power Today:<br><span id="VRMtoday"></span></p>
+            </div>
+            <div class="box ac-loads">
+                <p><i class="fa-solid fa-upload"></i>AC Loads</p>
+                <p class="loads">Total: <span id="loadsTotal"></span></p>
+            </div>
+            <div class="box charging">
+                <p id="charging_discharging">- - -</p>
+                <p class="percentage">Battery: <span id="VRMstate"></span></p>
+                <p>Wattage: <span id="VRMBatteryPower"></span></p>
+                <p>Voltage: <span id="VRMvoltage"></span></p>
+                <p>Current: <span id="VRMcurrent"></span></p>
+                <p>Time Left: <span id="TimeToGo"></span></p>
+            </div>
+
+            <div class="container-for-lines">
+                <div class="left-div bar" style="rotate: 90deg;">
+                    <span></span>
+                </div>
+                <div class="left-div bar highLeft" style="rotate: 90deg;">
+                    <span></span>
+                </div>
+                <div class="up-div bar" style="rotate: 180deg;">
+                    <span></span>
+                </div>
+                <div class="right-div bar" style="rotate: 270deg;">
+                    <span></span>
+                </div>
+                <div class="right-div bar highRight" style="rotate: 270deg;">
+                    <span></span>
+                </div>
+              </div>
+
+            <div class="box pv-charger">
+                <p id="pvCharger"><i class="fa-solid fa-solar-panel"></i>PV Charger</p>
+                <p class="power">Total: <span id="PVTotal"></span></p>
+            </div>
+        </div>
+    </main>    
+</body>
+
+</html>

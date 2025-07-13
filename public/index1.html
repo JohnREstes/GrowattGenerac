@@ -1,69 +1,203 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>ESP8266 Control Panel</title>
-  <style>
-    body {
-      font-family: sans-serif;
-      text-align: center;
-      padding-top: 50px;
-    }
-    .toggle {
-      appearance: none;
-      width: 60px;
-      height: 30px;
-      background: #ddd;
-      border-radius: 30px;
-      position: relative;
-      cursor: pointer;
-    }
-    .toggle:checked {
-      background: #4caf50;
-    }
-    .toggle::before {
-      content: '';
-      position: absolute;
-      width: 26px;
-      height: 26px;
-      background: white;
-      border-radius: 50%;
-      top: 2px;
-      left: 2px;
-      transition: 0.3s;
-    }
-    .toggle:checked::before {
-      transform: translateX(30px);
-    }
-    #status {
-      margin-top: 20px;
-      font-size: 1.2em;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <title>Smart Switch</title>
+    <script src="./SolarSystem.js" defer></script>
+    <script src="https://kit.fontawesome.com/f4c4519de4.js" crossorigin="anonymous"></script>
+
+    <link rel="stylesheet" href="/espcontrol/styles.css">
+        <link rel="stylesheet" href="./SolarSystem.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
 </head>
 <body>
-  <h1>ESP8266 GPIO Control</h1>
-  <label>
-    <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
-  </label>
-  <div id="status">Loading...</div>
+    <h1>Smart Solar</h1>
 
-  <script src="/espcontrol/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io({
-      path: '/espcontrol/socket.io'
-    });
+    <button onclick="logoutClientAndServer()" style="float: right; margin-top: -40px;">🚪 Logout</button>
+    <div class="button_div">
+        <i class="fa-regular fa-moon" id="toggle-dark-mode"></i>
+    </div>
 
-    socket.on('state', state => {
-      document.getElementById('pinToggle').checked = (state === 'ON');
-      document.getElementById('status').innerText = `Current State: ${state}`;
-    });
+        <main>
+        <div class="container-output">
 
-    function togglePin() {
-      socket.emit('toggle');
-    }
-  </script>
+            <div class="box ac-input">
+                <p><i class="fa-solid fa-plug"></i>AC Input</p>
+                <p class="inputPower">Total: <span id="inputPowerTotal"></span></p>
+            </div>
+            <div class="box status">
+                <i class="fa-regular fa-sun"></i>
+                <!-- <p id="powerToday">Power Today:<br><span id="VRMtoday"></span></p> -->
+            </div>
+            <div class="box ac-loads">
+                <p><i class="fa-solid fa-upload"></i>AC Loads</p>
+                <p class="loads">Total: <span id="loadsTotal"></span></p>
+            </div>
+            <div class="box charging">
+                <p id="charging_discharging">- - -</p>
+                <p class="percentage">Battery: <span id="batteryPercentage"></span></p>
+                <p>Wattage: <span id="batteryPower"></span></p>
+                <p>Voltage: <span id="batteryVoltage"></span></p>
+            </div>
+
+            <div class="container-for-lines">
+                <div class="left-div bar" style="rotate: 90deg;">
+                    <span></span>
+                </div>
+                <div class="left-div bar highLeft" style="rotate: 90deg;">
+                    <span></span>
+                </div>
+                <div class="up-div bar" style="rotate: 180deg;">
+                    <span></span>
+                </div>
+                <div class="right-div bar" style="rotate: 270deg;">
+                    <span></span>
+                </div>
+                <div class="right-div bar highRight" style="rotate: 270deg;">
+                    <span></span>
+                </div>
+              </div>
+
+            <div class="box pv-charger">
+                <p id="pvCharger"><i class="fa-solid fa-solar-panel"></i>PV Charger</p>
+                <p class="power">Total: <span id="PVTotal"></span></p>
+            </div>
+        </div>
+    </main>  
+
+        <div class="section" id="gpioSection">
+        <h2>GPIO Control <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('gpioSection')"></i></h2>
+        <div class="section-content">
+            <label>
+                <input type="checkbox" class="toggle" id="pinToggle" onchange="togglePin()">
+            </label>
+            <div id="status">Loading...</div>
+        </div>
+    </div>
+
+    <div id="scheduleSection" class="section"> <h2>Schedule Settings <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('scheduleSection')"></i></h2>
+        <div class="section-content">
+            <label for="deviceSelect">Select Device:</label>
+            <select id="deviceSelect" onchange="loadSchedule()">
+                <option value="">-- Choose Device --</option>
+            </select>
+
+            <label for="timezone">Timezone:</label>
+            <select id="timezone">
+                <option value="UTC">UTC</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Cancun">America/Cancun</option>
+                <option value="America/Chicago">America/Chicago</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+            </select>
+
+            <div id="events"></div>
+
+            <button onclick="addEvent()">+ Add Event</button>
+            <button onclick="saveSchedule()">💾 Save Schedule</button>
+
+            <div id="saveStatus" style="margin-top: 10px;"></div>
+            <div id="batteryTriggers" class="section" style="margin-top: 20px;">
+                <h3>Battery-Based Trigger Rules</h3>
+                <div id="batteryTriggersContainer"></div>
+                <!-- Trigger List Will Load Here -->
+            </div>
+
+            <div id="batteryTriggerForm" class="section">
+
+            <h3>Add / Update Trigger</h3>
+
+            <label for="inverterId">Inverter ID:</label>
+            <select id="inverterId">
+                <option value="">-- Select Inverter --</option>
+            </select>
+
+            <label for="metric">Metric:</label>
+            <select id="metric">
+                <option value="voltage">Battery Voltage</option>
+                <option value="percentage">Battery Percentage</option>
+            </select>
+
+            <label for="turnOnBelow">Turn ON below:</label>
+            <input type="number" step="0.1" id="turnOnBelow">
+
+            <label for="turnOffAbove">Turn OFF above:</label>
+            <input type="number" step="0.1" id="turnOffAbove">
+
+            <label>
+            <input type="checkbox" id="isEnabled" checked>
+            Enabled
+            </label>
 
 
+            <button onclick="saveBatteryTrigger()">Save Trigger</button>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="section" id="integrationsSection">
+        <h2>Integrations <i class="fas fa-minus-square toggle-section-icon" onclick="toggleSection('integrationsSection')"></i></h2>
+        <div class="section-content">
+            <button id="openGrowattModalBtn">Add New Growatt Integration</button>
+
+            <div id="growattIntegrationModal" class="modal">
+                <div class="modal-content">
+                    <span class="close-button">&times;</span>
+                    <h3>Add New Growatt Integration</h3>
+                    <form id="growattIntegrationForm">
+                        <label for="growattIntegrationName">Integration Name:</label>
+                        <input type="text" id="growattIntegrationName" name="name" required>
+
+                        <label for="growattUsername">Growatt Username:</label>
+                        <input type="text" id="growattUsername" name="username" required>
+
+                        <label for="growattPassword">Growatt Password:</label>
+                        <input type="password" id="growattPassword" name="password" required>
+
+                        <label for="growattServer">Growatt Server URL:</label>
+                        <input type="text" id="growattServer" name="server" value="https://server-us.growatt.com/" required>
+
+                        <label for="growattPlantId">Growatt Plant ID (Optional - for specific plant focus):</label>
+                        <input type="text" id="growattPlantId" name="plantId" placeholder="e.g., 4466">
+
+                        <label for="growattDeviceSerials">Device Serial Numbers (Optional - comma-separated):</label>
+                        <input type="text" id="growattDeviceSerials" name="deviceSerialNumbers" placeholder="e.g., UKDFBHG0GX,XSK0CKS058">
+
+                        <button type="submit">Add Growatt Integration</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="existing-integrations">
+                <h3>Your Existing Integrations</h3>
+                <ul id="integrationList">
+                    <li>Loading integrations...</li>
+                </ul>
+            </div>
+
+            <div id="growattInverterData">
+                <h2>Growatt Inverter Data</h2>
+                <div id="growattDataStatus">Loading Growatt data...</div>
+                <table id="growattInverterDataTable" style="display: none;">
+                    <thead>
+                        <tr>
+                            <th>Plant Name</th>
+                            <th>Inverter ID</th>
+                            <th>Battery Voltage (V)</th>
+                            <th>Battery Power (W)</th>
+                            <th>Battery %</th>
+                            <th>AC Input Power (W)</th>
+                            <th>AC Output Power (W)</th>
+                            <th>Solar Panel Power (W)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="/espcontrol/script.js"></script>
 </body>
 </html>
