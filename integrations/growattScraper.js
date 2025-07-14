@@ -29,70 +29,108 @@ async function scrapeGrowattData(username, password, inverterSerial) {
 
         // --- Data Scraping ---
         
-        const tipsElementSelector = '.tips.w';
-        let inverterMetrics = {};
+        // Hover over the tips element to reveal the data in the associated table
+        await page.hover('.tips.w');
+        
+        // Wait for the .val_vBat element to have valid content after the hover action.
+        await page.waitForFunction(() => {
+            const element = document.querySelector('.val_vBat');
+            if (element && element.textContent) {
+                const text = element.textContent.trim();
+                // Check if the text is present and not just a hyphen
+                return text.length > 0 && text !== '-'; 
+            }
+            return false;
+        }, { timeout: 30000 });
 
-        try {
-            // Wait for the tips element to be attached to the DOM
-            await page.waitForSelector(tipsElementSelector, { state: 'attached', timeout: 30000 });
+
+        const inverterMetrics = await page.evaluate(() => {
             
-            // Hover over the tips icon/area to reveal the data table
-            await page.hover(tipsElementSelector);
-            
-            // Wait for the .val_vBat element to have valid content after the hover action.
-            await page.waitForFunction(() => {
-                const element = document.querySelector('.val_vBat');
-                if (element && element.textContent) {
+            // Helper function to extract text content from an element and parse as a numerical value
+            const extractValueFromElement = (element) => {
+                if (element) {
                     const text = element.textContent.trim();
-                    // Check if the text is present and not just a hyphen
-                    return text.length > 0 && text !== '-'; 
+                    // Regex to extract numbers (including decimals) from the text
+                    const match = text.match(/([\d.]+)/);
+                    return match ? parseFloat(match[1]) : text;
                 }
-                return false;
-            }, { timeout: 30000 });
-
-            inverterMetrics = await page.evaluate(() => {
-                // Helper function to get text content from a selector and parse as a numerical value
-                const getText = (selector) => {
-                    const element = document.querySelector(selector);
-                    if (element) {
-                        const text = element.textContent.trim();
-                        const match = text.match(/([\d.]+)/);
-                        return match ? parseFloat(match[1]) : text;
-                    }
-                    return null;
-                };
-
-                const getSystemStatus = (selector) => {
-                    const element = document.querySelector(selector);
-                    return element ? element.textContent.trim() : null;
-                };
-
-                // Selectors for the inverter data on the dashboard page:
-                return {
-                    systemStatus: getSystemStatus('.valc + .val'), 
-                    batteryVoltage: getText('.val_vBat'), 
-                    pvPower1: getText('.val_pPv1'),
-                    pvPower2: getText('.val_pPv2'),
-                    pvPower3: getText('.val_pPv3'),
-                    consumption: getText('.abs span.val:nth-of-type(2)') 
-                };
-            });
-            
-        } catch (error) {
-            console.error(`Playwright scraping failed during hover or evaluation for device ${inverterSerial}:`, error.message);
-            // Return an object indicating failure if the scraping process failed
-            inverterMetrics = {
-                error: `Playwright scraping failed: ${error.message}`
+                return null;
             };
-        }
+
+            // Helper function to find an element by selector and extract its value
+            const getValueBySelector = (selector) => {
+                const element = document.querySelector(selector);
+                return extractValueFromElement(element);
+            };
+
+            // Helper function to find a value based on a text label within the provided HTML structure
+            const getValueByLabel = (label) => {
+                // Find the div.abs containing the specific label text in span.text, then get the value from span.val
+                const element = Array.from(document.querySelectorAll('div.abs')).find(
+                    div => {
+                        const textSpan = div.querySelector('span.text');
+                        // Check if the div contains a span.text with the specific label
+                        return textSpan && textSpan.textContent.includes(label);
+                    }
+                );
+                
+                if (element) {
+                    const valueSpan = element.querySelector('span.val');
+                    // Use extractValueFromElement on the found span element
+                    return extractValueFromElement(valueSpan);
+                }
+                return null;
+            };
+
+            const getSystemStatus = (selector) => {
+                const element = document.querySelector(selector);
+                return element ? element.textContent.trim() : null;
+            };
+
+            // Selectors for the inverter data on the dashboard page:
+            const metrics = {
+                // Using getValueBySelector for metrics retrieved via direct CSS selectors
+                systemStatus: getSystemStatus('.valc + .val'), 
+                batteryVoltage: getValueBySelector('.val_vBat'), 
+                pvPower1: getValueBySelector('.val_pPv1'),
+                pvPower2: getValueBySelector('.val_pPv2'),
+                pvPower3: getValueBySelector('.val_pPv3'),
+                
+                // Using the new getValueByLabel helper for Consumption and Generator Rated Power:
+                acOutputPower: getValueByLabel('Consumption'),
+                acInputPower: getValueByLabel('Generator Rated Power'),
+                
+                // Keeping previous selectors for other metrics that might be found via standard classes
+                batteryPower: getValueBySelector('.val_batP'),
+                batteryPercentage: getValueBySelector('.val_batCap'),
+            };
+
+            // Calculate solarPanelPower (sum of PV inputs)
+            metrics.solarPanelPower = (metrics.pvPower1 || 0) + (metrics.pvPower2 || 0) + (metrics.pvPower3 || 0);
+
+            // Note: The previous 'consumption' field seems redundant if acOutputPower is 'Consumption', 
+            // but we'll include it using getValueByLabel for consistency.
+            metrics.consumption = getValueByLabel('Consumption'); 
+
+            return metrics;
+        });
 
         console.log("Scraped data:", inverterMetrics);
         return inverterMetrics;
 
     } catch (error) {
+        // If scraping fails (e.g., hover timeout), return a structured response with N/A
         console.error("Playwright scraping failed:", error);
-        // Rethrow if the failure is during the login or browser setup
-        throw error;
+        return {
+            systemStatus: 'N/A',
+            batteryVoltage: 'N/A',
+            batteryPower: 'N/A',
+            batteryPercentage: 'N/A',
+            acInputPower: 'N/A',
+            acOutputPower: 'N/A',
+            solarPanelPower: 'N/A',
+            error: error.message
+        };
     } finally {
         // Ensure the browser closes
         if (browser) {
