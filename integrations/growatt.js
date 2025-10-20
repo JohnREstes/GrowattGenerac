@@ -93,18 +93,6 @@ class GrowattIntegration {
 
                 for (const deviceId in devices) {
                     const device = devices[deviceId];
-                    const inverterId = deviceId; // 👈 define inverterId here
-
-                    // ✅ Call the extra endpoints for this specific inverter
-                    try {
-                    const extra = await this.growatt.request('/v1/device/inverter/last_new_data', { device_sn: inverterId });
-                    console.log(`[GrowattIntegration-${this.integrationId}] Extra data for ${inverterId}:`, extra);
-
-                    const batch = await this.growatt.request('/v1/device/inverter/invs_data', { inverters: [inverterId] });
-                    console.log(`[GrowattIntegration-${this.integrationId}] Batch data for ${inverterId}:`, batch);
-                    } catch (err) {
-                    console.warn(`[GrowattIntegration-${this.integrationId}] Extra endpoint failed for ${inverterId}: ${err.message}`);
-                    }
                     
                     // Check if the device is specifically marked as an NPM-only device
                     const isNPMOnly = NPM_ONLY_DEVICES.includes(deviceId);

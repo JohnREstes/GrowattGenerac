@@ -112,6 +112,31 @@ async function scrapeGrowattData(username, password, inverterSerial) {
             // but we'll include it using getValueByLabel for consistency.
             metrics.consumption = getValueByLabel('Consumption'); 
 
+            // Try to read the chart data if available in the global JS context
+            let chartData = null;
+            try {
+            if (window.__echarts__ || window.echarts) {
+                // Sometimes Growatt stores data in a global variable or inline script
+                chartData = window.chartData || window.dataObj || null;
+            }
+            if (!chartData && window.chart1) {
+                chartData = window.chart1.getOption?.().series;
+            }
+            if (!chartData && typeof dataObj !== 'undefined') {
+                chartData = dataObj;
+            }
+            } catch (err) {
+            chartData = null;
+            }
+
+            // Merge chartData insights if available
+            if (chartData && chartData.srcObj) {
+            metrics.chart_eCharge = chartData.srcObj.eCharge;
+            metrics.chart_eDisCharge = chartData.srcObj.eDisCharge;
+            metrics.chart_ppv = chartData.ppv?.data?.slice(-1)[0] || null;
+            metrics.chart_load = chartData.elocalLoad?.data?.slice(-1)[0] || null;
+            }
+
             return metrics;
         });
 
