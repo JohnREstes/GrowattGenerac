@@ -1,94 +1,120 @@
 // integrations/growattScraper.js
+const { chromium } = require('playwright-chromium');
 
-const { chromium } = require('playwright');
-
-async function scrapeGrowattData({ username, password }) {
-  console.log('Starting Growatt login via Playwright...');
-
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-
+/**
+ * Scrapes Growatt inverter data from the web portal.
+ * @param {string} username - Growatt username/email
+ * @param {string} password - Growatt password
+ * @param {string} inverterSerial - The serial number of the SPH inverter (e.g., "KQQ2N9L03Q")
+ */
+async function scrapeGrowattData(username, password, inverterSerial) {
+  let browser;
   try {
-    await page.goto('https://server.growatt.com/login', {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000,
-    });
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    const page = await context.newPage();
 
-    // Fill credentials
-    await page.fill('#account', username);
-    await page.fill('#password', password);
-    await page.click('#btnLogin');
-    await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 });
+    console.log('[Scraper] Starting Growatt login via Playwright...');
+    await page.goto('https://server.growatt.com/', { waitUntil: 'domcontentloaded' });
 
-    console.log('Login successful. Navigating dashboard.');
+    // --- Login ---
+    await page.fill('#val_loginAccount', username);
+    await page.fill('#val_loginPwd', password);
+    await page.click('button.loginB');
 
-    // Wait until dashboard fully loads
-    await page.waitForSelector('.content', { timeout: 30000 });
+    // Wait for the dashboard to load
+    await Promise.race([
+      page.waitForFunction(() => window.dataObj && window.dataObj.srcObj, { timeout: 45000 }),
+      page.waitForSelector('.highcharts-container', { timeout: 45000 }),
+    ]);
+    console.log('[Scraper] Login successful, dashboard loaded.');
 
-    // Extract summary info
-    const data = await page.evaluate(() => {
-      const safeText = (selector) => {
-        const el = document.querySelector(selector);
-        return el ? el.textContent.trim() : 'N/A';
-      };
+    // Hover to trigger dashboard updates
+    await page.hover('.tips.w');
+    await page.waitForFunction(() => {
+      const el = document.querySelector('.val_vBat');
+      return el && el.textContent.trim() && el.textContent.trim() !== '-';
+    }, { timeout: 30000 });
 
-      const parseNumber = (v) => {
-        const n = parseFloat(v);
-        return isNaN(n) ? null : n;
-      };
-
-      return {
-        systemStatus: safeText('#systemStatus') || 'N/A',
-        batteryVoltage: parseNumber(safeText('#batteryVoltage')) || 'N/A',
-        pvPower1: parseNumber(safeText('#pvPower1')) || 0,
-        pvPower2: parseNumber(safeText('#pvPower2')) || 0,
-        pvPower3: parseNumber(safeText('#pvPower3')) || 0,
-        acOutputPower: parseNumber(safeText('#acOutputPower')) || 0,
-        acInputPower: parseNumber(safeText('#acInputPower')) || 0,
-        batteryPower: parseNumber(safeText('#batteryPower')) || null,
-        batteryPercentage: parseNumber(safeText('#batterySOC')) || null,
-        solarPanelPower: parseNumber(safeText('#solarPanelPower')) || 0,
-        consumption: parseNumber(safeText('#loadPower')) || 0
-      };
-    });
-
-    // --- Fetch SPH Battery Chart (Authenticated inside browser context) ---
+    // --- Fetch SPH Battery Chart (SOC) ---
     let socPercentage = null;
     try {
-      const socData = await page.evaluate(async (deviceSn) => {
-        const formData = new URLSearchParams();
-        formData.append('deviceSn', deviceSn);
-
-        const response = await fetch('/panel/sph/getSPHBatChart', {
-          method: 'POST',
+      const socResponse = await page.request.post(
+        'https://server.growatt.com/panel/sph/getSPHBatChart',
+        {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formData
-        });
+          form: { deviceSn: inverterSerial || 'KQQ2N9L03Q' },
+        }
+      );
 
-        // Parse as JSON
-        return await response.json();
-      }, 'KQQ2N9L03Q'); // <-- Your inverter serial number here
-
-      const socArray = socData?.obj?.socChart?.soc || [];
-      socPercentage = socArray.reverse().find(v => v !== null);
-      console.log('[Scraper] Battery SOC (from chart):', socPercentage);
+      const socJson = await socResponse.json();
+      const socArray = socJson?.obj?.socChart?.soc || [];
+      socPercentage = socArray.slice().reverse().find(v => v != null);
+      console.log(`[Scraper] Battery SOC (from chart for ${inverterSerial}):`, socPercentage);
     } catch (err) {
       console.warn('[Scraper] Failed to fetch SPH battery chart:', err.message);
     }
 
-    // Merge SOC value if available
-    if (socPercentage) data.batteryPercentage = socPercentage;
+    // --- Main Dashboard Data Extraction ---
+    const inverterMetrics = await page.evaluate(() => {
+      const extractValue = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const match = el.textContent.trim().match(/([\d.]+)/);
+        return match ? parseFloat(match[1]) : el.textContent.trim() || null;
+      };
 
-    console.log('Scraped data:', data);
+      const findByLabel = (label) => {
+        const el = Array.from(document.querySelectorAll('div.abs')).find(div => {
+          const t = div.querySelector('span.text');
+          return t && t.textContent.includes(label);
+        });
+        const val = el?.querySelector('span.val');
+        if (!val) return null;
+        const match = val.textContent.trim().match(/([\d.]+)/);
+        return match ? parseFloat(match[1]) : val.textContent.trim();
+      };
 
-    await browser.close();
-    return data;
+      const statusEl = document.querySelector('.valc + .val');
+      const systemStatus = statusEl ? statusEl.textContent.trim() : 'N/A';
 
-  } catch (err) {
-    console.error('Playwright scraping failed:', err);
-    await browser.close();
-    throw err;
+      const data = {
+        systemStatus,
+        batteryVoltage: extractValue('.val_vBat'),
+        pvPower1: extractValue('.val_pPv1'),
+        pvPower2: extractValue('.val_pPv2'),
+        pvPower3: extractValue('.val_pPv3'),
+        acOutputPower: findByLabel('Consumption'),
+        acInputPower: findByLabel('Generator Rated Power'),
+        batteryPower: extractValue('.val_batP'),
+        batteryPercentage: extractValue('.val_batCap'),
+      };
+
+      data.solarPanelPower =
+        (data.pvPower1 || 0) + (data.pvPower2 || 0) + (data.pvPower3 || 0);
+      data.consumption = findByLabel('Consumption');
+      return data;
+    });
+
+    if (socPercentage) inverterMetrics.batteryPercentage = socPercentage;
+
+    console.log('[Scraper] Scraped data:', inverterMetrics);
+    return inverterMetrics;
+
+  } catch (error) {
+    console.error('[Scraper] Playwright scraping failed:', error);
+    return {
+      systemStatus: 'N/A',
+      batteryVoltage: 'N/A',
+      batteryPower: 'N/A',
+      batteryPercentage: 'N/A',
+      acInputPower: 'N/A',
+      acOutputPower: 'N/A',
+      solarPanelPower: 'N/A',
+      error: error.message,
+    };
+  } finally {
+    if (browser) await browser.close();
   }
 }
 
