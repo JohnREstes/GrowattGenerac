@@ -2,10 +2,11 @@
 const { chromium } = require('playwright-chromium');
 
 /**
- * Scrapes Growatt inverter data from the web portal.
- * @param {string} username - Growatt username/email
- * @param {string} password - Growatt password
- * @param {string} inverterSerial - The serial number of the SPH inverter (e.g., "KQQ2N9L03Q")
+ * Scrapes Growatt inverter data using Playwright.
+ * Supports SPH inverters that require dashboard scraping and SOC chart retrieval.
+ * @param {string} username - Growatt account username.
+ * @param {string} password - Growatt account password.
+ * @param {string} inverterSerial - Inverter serial number (e.g., "KQQ2N9L03Q").
  */
 async function scrapeGrowattData(username, password, inverterSerial) {
   let browser;
@@ -22,15 +23,24 @@ async function scrapeGrowattData(username, password, inverterSerial) {
     await page.fill('#val_loginPwd', password);
     await page.click('button.loginB');
 
-    // Wait for dashboard load
+    // --- Smarter dashboard detection ---
     await Promise.race([
-      page.waitForFunction(() => window.dataObj && window.dataObj.srcObj, { timeout: 45000 }),
-      page.waitForSelector('.highcharts-container', { timeout: 45000 }),
+      page.waitForURL('**/index', { timeout: 60000 }),
+      page.waitForSelector('.val_vBat', { timeout: 60000 }),
+      page.waitForSelector('.highcharts-container', { timeout: 60000 }),
     ]);
+
+    // Sometimes dashboard elements take longer to render
+    if (!(await page.$('.val_vBat'))) {
+      console.log('[Scraper] Dashboard not ready, refreshing once...');
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('.val_vBat', { timeout: 30000 });
+    }
+
     console.log('[Scraper] Login successful, dashboard loaded.');
 
-    // Hover to trigger dashboard updates
-    await page.hover('.tips.w');
+    // Hover to trigger dashboard metric updates
+    await page.hover('.tips.w').catch(() => {});
     await page.waitForFunction(() => {
       const el = document.querySelector('.val_vBat');
       return el && el.textContent.trim() && el.textContent.trim() !== '-';
@@ -102,7 +112,7 @@ async function scrapeGrowattData(username, password, inverterSerial) {
       return data;
     });
 
-    // Merge SOC from chart if available
+    // Merge SOC value from chart if available
     if (socPercentage) inverterMetrics.batteryPercentage = socPercentage;
 
     console.log('[Scraper] Scraped data:', inverterMetrics);
