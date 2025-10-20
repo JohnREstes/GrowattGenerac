@@ -85,11 +85,11 @@ class GrowattIntegration {
             console.log(`[GrowattIntegration-${this.integrationId}] Successfully fetched all plant data from Growatt.`);
             
             // after current data fetch
-            const extra = await this.request(/* /device/inverter/last_new_data */, { device_sn: inverterId });
-            console.log("Extra data:", extra);
+            const extra = await this.request('/v1/device/inverter/last_new_data', { device_sn: inverterId });
+            console.log('Extra data:', extra);
 
-            const batch = await this.request(/* /device/inverter/invs_data */, { inverters: [inverterId] });
-            console.log("Batch data:", batch);
+            const batch = await this.request('/v1/device/inverter/invs_data', { inverters: [inverterId] });
+            console.log('Batch data:', batch);
 
             const relevantData = { allRawPlantData: allPlantData };
             const inverterSummaries = [];
