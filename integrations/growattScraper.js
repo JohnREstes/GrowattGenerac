@@ -24,7 +24,10 @@ async function scrapeGrowattData(username, password, inverterSerial) {
         await page.click('button.loginB');
         
         // Wait for navigation to the dashboard after successful login
-        await page.waitForNavigation({ waitUntil: 'domcontentloaded' });
+        await Promise.race([
+            page.waitForFunction(() => window.dataObj && window.dataObj.srcObj, { timeout: 45000 }),
+            page.waitForSelector('.highcharts-container', { timeout: 45000 })
+            ]);
         console.log("Login successful. Navigating dashboard.");
 
         // --- Data Scraping ---
