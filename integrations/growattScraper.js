@@ -46,6 +46,29 @@ async function scrapeGrowattData(username, password, inverterSerial) {
             return false;
         }, { timeout: 30000 });
 
+        // Fetch SPH battery chart data (state of charge)
+            let socPercentage = null;
+            try {
+            const socResponse = await page.request.post(
+                'https://server.growatt.com/panel/sph/getSPHBatChart',
+                {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                form: {
+                    deviceSn: 'KQQ2N9L03Q', // your inverter serial number
+                },
+                }
+            );
+
+            const socJson = await socResponse.json();
+            const socArray = socJson?.obj?.socChart?.soc || [];
+            socPercentage = socArray.reverse().find(v => v !== null);
+            console.log('[Scraper] Battery SOC (from chart):', socPercentage);
+            } catch (err) {
+            console.warn('[Scraper] Failed to fetch SPH battery chart:', err.message);
+            }
+
 
         const inverterMetrics = await page.evaluate(() => {
             
