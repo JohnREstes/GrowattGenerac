@@ -22,7 +22,7 @@ async function scrapeGrowattData(username, password, inverterSerial) {
     await page.fill('#val_loginPwd', password);
     await page.click('button.loginB');
 
-    // Wait for the dashboard to load
+    // Wait for dashboard load
     await Promise.race([
       page.waitForFunction(() => window.dataObj && window.dataObj.srcObj, { timeout: 45000 }),
       page.waitForSelector('.highcharts-container', { timeout: 45000 }),
@@ -39,15 +39,21 @@ async function scrapeGrowattData(username, password, inverterSerial) {
     // --- Fetch SPH Battery Chart (SOC) ---
     let socPercentage = null;
     try {
-      const socResponse = await page.request.post(
+      const socResponse = await page.request.fetch(
         'https://server.growatt.com/panel/sph/getSPHBatChart',
         {
+          method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          form: { deviceSn: inverterSerial || 'KQQ2N9L03Q' },
+          body: `deviceSn=${encodeURIComponent(inverterSerial || 'KQQ2N9L03Q')}`,
         }
       );
 
-      const socJson = await socResponse.json();
+      const text = await socResponse.text();
+      if (text.trim().startsWith('<')) {
+        throw new Error('Got HTML instead of JSON (likely missing session cookie)');
+      }
+
+      const socJson = JSON.parse(text);
       const socArray = socJson?.obj?.socChart?.soc || [];
       socPercentage = socArray.slice().reverse().find(v => v != null);
       console.log(`[Scraper] Battery SOC (from chart for ${inverterSerial}):`, socPercentage);
@@ -96,6 +102,7 @@ async function scrapeGrowattData(username, password, inverterSerial) {
       return data;
     });
 
+    // Merge SOC from chart if available
     if (socPercentage) inverterMetrics.batteryPercentage = socPercentage;
 
     console.log('[Scraper] Scraped data:', inverterMetrics);
